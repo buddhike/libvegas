@@ -4,6 +4,7 @@ include(CheckCCompilerFlag)
 
 set(THIRD_PARTY_LIB_DIR "${libvegas_SOURCE_DIR}/third_party/lib")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "$<0:>${CMAKE_BINARY_DIR}/bin")
+set(CMAKE_PREFIX_PATH, "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
 
 if(CMAKE_COMPILER_IS_GNUCXX)
     set(ADDL_LINK_CONFIG "-static-libstdc++")
@@ -27,9 +28,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXE_LINKER_FLAGS "-L${THIRD_PARTY_LIB_DIR} ${ADDL_LINK_CONFIG}")
 
 set(SOURCE_FILES
-        producer.h
+        producer.hpp
         producer.cpp
-        consumer.h
+        consumer.hpp
         consumer.cpp
     )
 

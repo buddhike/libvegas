@@ -1,4 +1,4 @@
-#include "producer.h"
+#include "producer.hpp"
 #include <aws/core/Aws.h>
 #include <aws/kinesis/KinesisClient.h>
 #include <aws/kinesis/model/DescribeStreamRequest.h>

@@ -26,11 +26,6 @@ CA_CERT="https://curl.se/ca/cacert.pem"
 
 INSTALL_DIR=$(pwd)/third_party
 
-# Cleanup any earlier version of the third party directory and links to it.
-rm -f b2
-rm -rf $INSTALL_DIR
-mkdir -p $INSTALL_DIR
-
 #Figure out the release type from os. The release type will be used to determine the final storage location
 # of the native binary
 function find_release_type() {
@@ -114,93 +109,19 @@ function conf {
   fi
 }
 
-# OpenSSL
-# if [ ! -d "openssl-${OPENSSL_VERSION}" ]; then
-
-#   _curl "$LIB_OPENSSL" >openssl.tgz
-#   tar xf openssl.tgz
-#   rm openssl.tgz
-
-#   cd openssl-${OPENSSL_VERSION}
-#   OPTS="threads no-shared no-idea no-camellia no-seed no-bf no-cast no-rc2 no-rc5 no-md2 no-mdc2 no-ssl2 no-ssl3 no-capieng no-dso"
-
-#   if [[ $(uname) == 'Darwin' ]]; then
-#     OPTS="$OPTS darwin64-x86_64-cc enable-ec_nistp_64_gcc_128"
-#     silence ./Configure $OPTS --prefix="$INSTALL_DIR"
-#   elif [[ $(uname) == MINGW* ]]; then
-#     silence ./Configure mingw64 $OPTS --prefix="$INSTALL_DIR"
-#     find ./ -name Makefile | while read f; do
-#       echo >>"$f"
-#       echo "%.o: %.c" >>"$f"
-#       echo -e '\t$(COMPILE.c) $(OUTPUT_OPTION) $<;' >>$f
-#     done
-#   else
-#     silence ./config $OPTS --prefix="$INSTALL_DIR"
-#   fi
-
-#   silence make depend
-#   silence make # don't use -j, doesn't work half the time
-#   silence make install
-
-#   cd ..
-# fi
-
-# zlib
-# if [ ! -d "zlib-${ZLIB_VERSION}" ]; then
-#   _curl "$LIB_ZLIB" >zlib.tgz
-#   tar xf zlib.tgz
-#   rm zlib.tgz
-
-#   cd zlib-${ZLIB_VERSION}
-#   silence ./configure --static --prefix="$INSTALL_DIR"
-#   silence make -j
-#   silence make install
-
-#   cd ..
-# fi
-
 # Google Protocol Buffers
-# if [ ! -d "protobuf-${PROTOBUF_VERSION}" ]; then
-#   _curl "$LIB_PROTOBUF" >protobuf.tgz
-#   tar xf protobuf.tgz
-#   rm protobuf.tgz
+if [ ! -d "protobuf-${PROTOBUF_VERSION}" ]; then
+  _curl "$LIB_PROTOBUF" >protobuf.tgz
+  tar xf protobuf.tgz
+  rm protobuf.tgz
 
-#   cd protobuf-${PROTOBUF_VERSION}
-#   silence conf --enable-shared=no
-#   silence make -j 4
-#   silence make install
+  cd protobuf-${PROTOBUF_VERSION}
+  silence conf --enable-shared=no
+  silence make -j 4
+  silence make install
 
-#   cd ..
-# fi
-
-# libcurl
-# if [ ! -d "curl-${CURL_VERSION}" ]; then
-#   _curl "$LIB_CURL" >curl.tgz
-#   tar xf curl.tgz
-#   rm curl.tgz
-
-#   cd curl-${CURL_VERSION}
-
-#   if [[ $(uname) == 'Darwin' ]]; then
-#     silence conf --with-openssl --enable-threaded-resolver \
-#       --disable-shared --disable-ldap --disable-ldaps --disable-debug \
-#       --without-libidn2 --without-libssh2 --without-ca-bundle \
-#       --without-brotli --without-nghttp2 --without-librtmp --without-zstd
-#     # Apply a patch for macOS that should prevent curl from trying to use clock_gettime
-#     # This is a temporary work around for https://github.com/awslabs/amazon-kinesis-producer/issues/117
-#     # until dependencies are updated
-#     #
-#     sed -Ei .bak 's/#define HAVE_CLOCK_GETTIME_MONOTONIC 1//' lib/curl_config.h
-#   else
-#     silence conf --disable-shared --disable-ldap --disable-ldaps --without-libidn2 \
-#       --enable-threaded-resolver --disable-debug --without-libssh2 --without-ca-bundle --with-ssl="${INSTALL_DIR}" --without-libidn
-#   fi
-
-#   silence make -j
-#   silence make install
-
-#   cd ..
-# fi
+  cd ..
+fi
 
 # AWS C++ SDK
 if [ ! -d "aws-sdk-cpp" ]; then
@@ -216,7 +137,7 @@ if [ ! -d "aws-sdk-cpp" ]; then
   cd aws-sdk-cpp-build
 
   silence $CMAKE \
-    -DBUILD_ONLY="kinesis;monitoring;sts" \
+    -DBUILD_ONLY="core;kinesis;monitoring;sts" \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo \
     -DSTATIC_LINKING=1 \
     -DCMAKE_PREFIX_PATH="$INSTALL_DIR" \
@@ -235,20 +156,6 @@ if [ ! -d "aws-sdk-cpp" ]; then
 fi
 
 cd ..
-
-# # Build the native kinesis producer
-# $CMAKE -DCMAKE_PREFIX_PATH="$INSTALL_DIR" -DCMAKE_BUILD_TYPE=RelWithDebInfo .
-# make -j8
-
-# #copy native producer to a location that the java producer can package it
-# NATIVE_BINARY_DIR=java/amazon-kinesis-producer/src/main/resources/amazon-kinesis-producer-native-binaries/$RELEASE_TYPE/
-# mkdir -p $NATIVE_BINARY_DIR
-# cp kinesis_producer $NATIVE_BINARY_DIR
-
-# #build the java producer and install it locally
-# pushd java/amazon-kinesis-producer
-# mvn clean package source:jar javadoc:jar install
-# popd
 
 set +e
 set +x
