@@ -1,9 +1,10 @@
 cmake_minimum_required(VERSION 3.5)
-project(libvegas)
+project(vegas)
 include(CheckCCompilerFlag)
 
-set(THIRD_PARTY_LIB_DIR "${libvegas_SOURCE_DIR}/third_party/lib")
+set(THIRD_PARTY_LIB_DIR "${vegas_SOURCE_DIR}/third_party/lib")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "$<0:>${CMAKE_BINARY_DIR}/bin")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "$<0:>/bin")
 set(CMAKE_PREFIX_PATH, "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
 
 if(CMAKE_COMPILER_IS_GNUCXX)
@@ -32,7 +33,9 @@ set(SOURCE_FILES
         producer.cpp
         consumer.hpp
         consumer.cpp
-    )
+        vegas.h
+        vegas.cpp
+)
 
 set(TESTS_SOURCE
     producer_test.cpp
@@ -55,6 +58,6 @@ endif()
 find_package(Threads)
 find_package(AWSSDK REQUIRED COMPONENTS kinesis monitoring sts)
 
-add_executable(${PROJECT_NAME} ${SOURCE_FILES} producer.cpp)
+add_library(${PROJECT_NAME} ${SOURCE_FILES})
 target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC ${THIRD_PARTY_INCLUDE})
 target_link_libraries(${PROJECT_NAME} ${AWSSDK_LINK_LIBRARIES})
