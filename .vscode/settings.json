@@ -1,4 +1,5 @@
 {
+    "cmake.sourceDirectory": "/Users/buddhiks/Documents/repos/libvegas/cpppoc",
     "files.associations": {
         "string": "cpp"
     }

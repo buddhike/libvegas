@@ -25,6 +25,7 @@ LIB_CURL="https://curl.haxx.se/download/curl-${CURL_VERSION}.tar.gz"
 CA_CERT="https://curl.se/ca/cacert.pem"
 
 INSTALL_DIR=$(pwd)/third_party
+mkdir "${INSTALL_DIR}" && TRUE
 
 #Figure out the release type from os. The release type will be used to determine the final storage location
 # of the native binary
