@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	vegas "github.com/buddhike/vegas/client"
-	"github.com/buddhike/vegas/client/pb"
+	vegas "github.com/buddhike/libvegas/lib"
+	"github.com/buddhike/libvegas/lib/pb"
 )
 
 func main() {
