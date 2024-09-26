@@ -1,3 +1,3 @@
-module github.com/buddhike/vegas/samples/basic
+module github.com/buddhike/libvegas/samples/basic
 
-go 1.20
+go 1.23
