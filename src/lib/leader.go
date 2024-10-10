@@ -92,8 +92,8 @@ func (l *Leader) becomeFollower() state {
 }
 
 func (l *Leader) becomeCandidate() state {
-	o := l.runElection()
-	for o != electionOutcomeInconclusive {
+	o := electionOutcomeInconclusive
+	for o == electionOutcomeInconclusive {
 		o = l.runElection()
 	}
 	switch o {
@@ -167,7 +167,6 @@ func (l *Leader) runElection() electionOutcome {
 }
 
 func (l *Leader) becomeLeader() {
-
 }
 
 func NewLeader(electionTimeout time.Duration, logger *zap.SugaredLogger) *Leader {
