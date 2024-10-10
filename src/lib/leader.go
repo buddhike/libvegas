@@ -33,7 +33,7 @@ const (
 	stateExit
 )
 
-type Manager struct {
+type Leader struct {
 	electionTimeout time.Duration
 	id              string
 	logger          *zap.SugaredLogger
@@ -46,55 +46,55 @@ type Manager struct {
 	term          int64
 }
 
-func (m *Manager) Start() {
-	n := m.becomeFollower()
+func (l *Leader) Start() {
+	n := l.becomeFollower()
 	for n != stateExit {
 		switch n {
 		case stateCandidate:
-			m.becomeCandidate()
+			l.becomeCandidate()
 		case stateLeader:
-			m.becomeLeader()
+			l.becomeLeader()
 		case stateFollower:
-			m.becomeFollower()
+			l.becomeFollower()
 		}
 	}
 }
 
-func (m *Manager) becomeFollower() state {
+func (l *Leader) becomeFollower() state {
 	voted := false
 	for {
 		select {
-		case v := <-m.request:
+		case v := <-l.request:
 			switch msg := v.msg.(type) {
 			case *pb.HeartbeatRequest:
-				if msg.Term >= m.term {
-					m.term = msg.Term
+				if msg.Term >= l.term {
+					l.term = msg.Term
 				} else {
 					res := pb.HeartbeatResponse{
-						Term: m.term,
+						Term: l.term,
 					}
 					v.responder.respond(&res)
 				}
 			case *pb.VoteRequest:
-				vote := !voted && msg.Term >= m.term
+				vote := !voted && msg.Term >= l.term
 				res := pb.VoteResponse{
-					Term: m.term,
+					Term: l.term,
 					Yes:  vote,
 				}
 				voted = voted || vote
 				v.responder.respond(&res)
 
 			}
-		case <-time.After(m.electionTimeout):
+		case <-time.After(l.electionTimeout):
 			return stateCandidate
 		}
 	}
 }
 
-func (m *Manager) becomeCandidate() state {
-	o := m.runElection()
+func (l *Leader) becomeCandidate() state {
+	o := l.runElection()
 	for o != electionOutcomeInconclusive {
-		o = m.runElection()
+		o = l.runElection()
 	}
 	switch o {
 	case electionOutcomeLeader:
@@ -105,18 +105,18 @@ func (m *Manager) becomeCandidate() state {
 	return stateExit
 }
 
-func (m *Manager) runElection() electionOutcome {
-	m.term++
+func (l *Leader) runElection() electionOutcome {
+	l.term++
 	vr := pb.VoteRequest{
-		CandidateID: m.id,
-		Term:        m.term,
+		CandidateID: l.id,
+		Term:        l.term,
 	}
 	// Write vote request to each peer as a non blocking operation.
 	// This is essential because, peers retry sending a protocol
 	// requests indefinitly. Peers channel is non buffered.
 	// We don't want to block an election due an inflight request to an
 	// unavailable peer at the time.
-	for _, p := range m.requestPeers {
+	for _, p := range l.requestPeers {
 		select {
 		case p <- &vr:
 		default:
@@ -129,49 +129,49 @@ func (m *Manager) runElection() electionOutcome {
 	voted := false
 	for {
 		select {
-		case v := <-m.peerResponses:
+		case v := <-l.peerResponses:
 			switch msg := v.(type) {
 			case *pb.VoteResponse:
-				if msg.Term == m.term {
+				if msg.Term == l.term {
 					votes++
 				}
-				if votes >= ((len(m.requestPeers)+1)/2)+1 {
+				if votes >= ((len(l.requestPeers)+1)/2)+1 {
 					return electionOutcomeLeader
 				}
 			}
-		case v := <-m.request:
+		case v := <-l.request:
 			switch msg := v.msg.(type) {
 			case *pb.HeartbeatRequest:
-				if msg.Term >= m.term {
-					m.term = msg.Term
+				if msg.Term >= l.term {
+					l.term = msg.Term
 					return electionOutcomeFollower
 				} else {
 					res := pb.HeartbeatResponse{
-						Term: m.term,
+						Term: l.term,
 					}
 					v.responder.respond(&res)
 				}
 			case *pb.VoteRequest:
-				vote := !voted && msg.Term >= m.term
+				vote := !voted && msg.Term >= l.term
 				res := pb.VoteResponse{
-					Term: m.term,
+					Term: l.term,
 					Yes:  vote,
 				}
 				voted = voted || vote
 				v.responder.respond(&res)
 			}
-		case <-time.After(m.electionTimeout):
+		case <-time.After(l.electionTimeout):
 			return electionOutcomeInconclusive
 		}
 	}
 }
 
-func (m *Manager) becomeLeader() {
+func (l *Leader) becomeLeader() {
 
 }
 
-func NewManager(electionTimeout time.Duration, logger *zap.SugaredLogger) *Manager {
-	return &Manager{
+func NewLeader(electionTimeout time.Duration, logger *zap.SugaredLogger) *Leader {
+	return &Leader{
 		electionTimeout: electionTimeout,
 		logger:          logger,
 	}
