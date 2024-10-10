@@ -47,15 +47,15 @@ type Leader struct {
 }
 
 func (l *Leader) Start() {
-	n := l.becomeFollower()
+	n := stateFollower
 	for n != stateExit {
 		switch n {
+		case stateFollower:
+			l.becomeFollower()
 		case stateCandidate:
 			l.becomeCandidate()
 		case stateLeader:
 			l.becomeLeader()
-		case stateFollower:
-			l.becomeFollower()
 		}
 	}
 }
