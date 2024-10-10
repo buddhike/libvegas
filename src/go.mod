@@ -6,8 +6,10 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.31.0
 	github.com/aws/aws-sdk-go-v2/config v1.27.38
 	github.com/aws/aws-sdk-go-v2/service/kinesis v1.31.1
-	google.golang.org/protobuf v1.34.2
+	google.golang.org/protobuf v1.35.1
 )
+
+require go.uber.org/multierr v1.10.0 // indirect
 
 require (
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.5 // indirect
@@ -24,4 +26,5 @@ require (
 	github.com/aws/smithy-go v1.21.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
+	go.uber.org/zap v1.27.0
 )

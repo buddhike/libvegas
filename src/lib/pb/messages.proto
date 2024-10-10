@@ -1,5 +1,5 @@
 syntax = "proto3";
-package vegas;
+package libvegas;
 option go_package = "./pb";
 
 message UserRecord {
@@ -11,4 +11,23 @@ message UserRecord {
 message Record {
    string shardID = 1;
    repeated UserRecord userRecords = 2;
+}
+
+message VoteRequest {
+    string candidateID = 1;
+    int64 term = 2;
+}
+
+message VoteResponse {
+    int64 term = 1;
+    bool yes = 2;
+}
+
+message HeartbeatRequest {
+    string leaderID = 1;
+    int64 term = 2;
+}
+
+message HeartbeatResponse {
+    int64 term = 1;
 }
