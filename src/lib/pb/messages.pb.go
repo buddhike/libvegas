@@ -134,29 +134,26 @@ func (x *Record) GetUserRecords() []*UserRecord {
 	return nil
 }
 
-type VoteRequest struct {
+type QueryLeaderRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
-
-	CandidateID string `protobuf:"bytes,1,opt,name=candidateID,proto3" json:"candidateID,omitempty"`
-	Term        int64  `protobuf:"varint,2,opt,name=term,proto3" json:"term,omitempty"`
 }
 
-func (x *VoteRequest) Reset() {
-	*x = VoteRequest{}
+func (x *QueryLeaderRequest) Reset() {
+	*x = QueryLeaderRequest{}
 	mi := &file_messages_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *VoteRequest) String() string {
+func (x *QueryLeaderRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*VoteRequest) ProtoMessage() {}
+func (*QueryLeaderRequest) ProtoMessage() {}
 
-func (x *VoteRequest) ProtoReflect() protoreflect.Message {
+func (x *QueryLeaderRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_messages_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -168,48 +165,34 @@ func (x *VoteRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use VoteRequest.ProtoReflect.Descriptor instead.
-func (*VoteRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use QueryLeaderRequest.ProtoReflect.Descriptor instead.
+func (*QueryLeaderRequest) Descriptor() ([]byte, []int) {
 	return file_messages_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *VoteRequest) GetCandidateID() string {
-	if x != nil {
-		return x.CandidateID
-	}
-	return ""
-}
-
-func (x *VoteRequest) GetTerm() int64 {
-	if x != nil {
-		return x.Term
-	}
-	return 0
-}
-
-type VoteResponse struct {
+type QueryLeaderResponse struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Term int64 `protobuf:"varint,1,opt,name=term,proto3" json:"term,omitempty"`
-	Yes  bool  `protobuf:"varint,2,opt,name=yes,proto3" json:"yes,omitempty"`
+	LeaderID  string `protobuf:"bytes,1,opt,name=leaderID,proto3" json:"leaderID,omitempty"`
+	ErrorCode string `protobuf:"bytes,2,opt,name=errorCode,proto3" json:"errorCode,omitempty"`
 }
 
-func (x *VoteResponse) Reset() {
-	*x = VoteResponse{}
+func (x *QueryLeaderResponse) Reset() {
+	*x = QueryLeaderResponse{}
 	mi := &file_messages_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *VoteResponse) String() string {
+func (x *QueryLeaderResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*VoteResponse) ProtoMessage() {}
+func (*QueryLeaderResponse) ProtoMessage() {}
 
-func (x *VoteResponse) ProtoReflect() protoreflect.Message {
+func (x *QueryLeaderResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_messages_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -221,100 +204,109 @@ func (x *VoteResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use VoteResponse.ProtoReflect.Descriptor instead.
-func (*VoteResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use QueryLeaderResponse.ProtoReflect.Descriptor instead.
+func (*QueryLeaderResponse) Descriptor() ([]byte, []int) {
 	return file_messages_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *VoteResponse) GetTerm() int64 {
-	if x != nil {
-		return x.Term
-	}
-	return 0
-}
-
-func (x *VoteResponse) GetYes() bool {
-	if x != nil {
-		return x.Yes
-	}
-	return false
-}
-
-type HeartbeatRequest struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	LeaderID string `protobuf:"bytes,1,opt,name=leaderID,proto3" json:"leaderID,omitempty"`
-	Term     int64  `protobuf:"varint,2,opt,name=term,proto3" json:"term,omitempty"`
-}
-
-func (x *HeartbeatRequest) Reset() {
-	*x = HeartbeatRequest{}
-	mi := &file_messages_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *HeartbeatRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*HeartbeatRequest) ProtoMessage() {}
-
-func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use HeartbeatRequest.ProtoReflect.Descriptor instead.
-func (*HeartbeatRequest) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *HeartbeatRequest) GetLeaderID() string {
+func (x *QueryLeaderResponse) GetLeaderID() string {
 	if x != nil {
 		return x.LeaderID
 	}
 	return ""
 }
 
-func (x *HeartbeatRequest) GetTerm() int64 {
+func (x *QueryLeaderResponse) GetErrorCode() string {
 	if x != nil {
-		return x.Term
+		return x.ErrorCode
 	}
-	return 0
+	return ""
 }
 
-type HeartbeatResponse struct {
+type CheckpointRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Term int64 `protobuf:"varint,1,opt,name=term,proto3" json:"term,omitempty"`
+	ShardID        string `protobuf:"bytes,1,opt,name=shardID,proto3" json:"shardID,omitempty"`
+	WorkerID       string `protobuf:"bytes,2,opt,name=workerID,proto3" json:"workerID,omitempty"`
+	SequenceNumber string `protobuf:"bytes,3,opt,name=sequenceNumber,proto3" json:"sequenceNumber,omitempty"`
 }
 
-func (x *HeartbeatResponse) Reset() {
-	*x = HeartbeatResponse{}
+func (x *CheckpointRequest) Reset() {
+	*x = CheckpointRequest{}
+	mi := &file_messages_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckpointRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckpointRequest) ProtoMessage() {}
+
+func (x *CheckpointRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_messages_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckpointRequest.ProtoReflect.Descriptor instead.
+func (*CheckpointRequest) Descriptor() ([]byte, []int) {
+	return file_messages_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *CheckpointRequest) GetShardID() string {
+	if x != nil {
+		return x.ShardID
+	}
+	return ""
+}
+
+func (x *CheckpointRequest) GetWorkerID() string {
+	if x != nil {
+		return x.WorkerID
+	}
+	return ""
+}
+
+func (x *CheckpointRequest) GetSequenceNumber() string {
+	if x != nil {
+		return x.SequenceNumber
+	}
+	return ""
+}
+
+type CheckpointResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Success   bool   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	ErrorCode string `protobuf:"bytes,2,opt,name=errorCode,proto3" json:"errorCode,omitempty"`
+}
+
+func (x *CheckpointResponse) Reset() {
+	*x = CheckpointResponse{}
 	mi := &file_messages_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *HeartbeatResponse) String() string {
+func (x *CheckpointResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*HeartbeatResponse) ProtoMessage() {}
+func (*CheckpointResponse) ProtoMessage() {}
 
-func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
+func (x *CheckpointResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_messages_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -326,16 +318,23 @@ func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use HeartbeatResponse.ProtoReflect.Descriptor instead.
-func (*HeartbeatResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use CheckpointResponse.ProtoReflect.Descriptor instead.
+func (*CheckpointResponse) Descriptor() ([]byte, []int) {
 	return file_messages_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *HeartbeatResponse) GetTerm() int64 {
+func (x *CheckpointResponse) GetSuccess() bool {
 	if x != nil {
-		return x.Term
+		return x.Success
 	}
-	return 0
+	return false
+}
+
+func (x *CheckpointResponse) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
 }
 
 var File_messages_proto protoreflect.FileDescriptor
@@ -354,21 +353,25 @@ var file_messages_proto_rawDesc = []byte{
 	0x12, 0x36, 0x0a, 0x0b, 0x75, 0x73, 0x65, 0x72, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x73, 0x18,
 	0x02, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x6c, 0x69, 0x62, 0x76, 0x65, 0x67, 0x61, 0x73,
 	0x2e, 0x55, 0x73, 0x65, 0x72, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x52, 0x0b, 0x75, 0x73, 0x65,
-	0x72, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x73, 0x22, 0x43, 0x0a, 0x0b, 0x56, 0x6f, 0x74, 0x65,
-	0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x20, 0x0a, 0x0b, 0x63, 0x61, 0x6e, 0x64, 0x69,
-	0x64, 0x61, 0x74, 0x65, 0x49, 0x44, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x63, 0x61,
-	0x6e, 0x64, 0x69, 0x64, 0x61, 0x74, 0x65, 0x49, 0x44, 0x12, 0x12, 0x0a, 0x04, 0x74, 0x65, 0x72,
-	0x6d, 0x18, 0x02, 0x20, 0x01, 0x28, 0x03, 0x52, 0x04, 0x74, 0x65, 0x72, 0x6d, 0x22, 0x34, 0x0a,
-	0x0c, 0x56, 0x6f, 0x74, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x12, 0x0a,
-	0x04, 0x74, 0x65, 0x72, 0x6d, 0x18, 0x01, 0x20, 0x01, 0x28, 0x03, 0x52, 0x04, 0x74, 0x65, 0x72,
-	0x6d, 0x12, 0x10, 0x0a, 0x03, 0x79, 0x65, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x08, 0x52, 0x03,
-	0x79, 0x65, 0x73, 0x22, 0x42, 0x0a, 0x10, 0x48, 0x65, 0x61, 0x72, 0x74, 0x62, 0x65, 0x61, 0x74,
-	0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x1a, 0x0a, 0x08, 0x6c, 0x65, 0x61, 0x64, 0x65,
-	0x72, 0x49, 0x44, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x6c, 0x65, 0x61, 0x64, 0x65,
-	0x72, 0x49, 0x44, 0x12, 0x12, 0x0a, 0x04, 0x74, 0x65, 0x72, 0x6d, 0x18, 0x02, 0x20, 0x01, 0x28,
-	0x03, 0x52, 0x04, 0x74, 0x65, 0x72, 0x6d, 0x22, 0x27, 0x0a, 0x11, 0x48, 0x65, 0x61, 0x72, 0x74,
-	0x62, 0x65, 0x61, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x12, 0x0a, 0x04,
-	0x74, 0x65, 0x72, 0x6d, 0x18, 0x01, 0x20, 0x01, 0x28, 0x03, 0x52, 0x04, 0x74, 0x65, 0x72, 0x6d,
+	0x72, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x73, 0x22, 0x14, 0x0a, 0x12, 0x51, 0x75, 0x65, 0x72,
+	0x79, 0x4c, 0x65, 0x61, 0x64, 0x65, 0x72, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x22, 0x4f,
+	0x0a, 0x13, 0x51, 0x75, 0x65, 0x72, 0x79, 0x4c, 0x65, 0x61, 0x64, 0x65, 0x72, 0x52, 0x65, 0x73,
+	0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x1a, 0x0a, 0x08, 0x6c, 0x65, 0x61, 0x64, 0x65, 0x72, 0x49,
+	0x44, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x6c, 0x65, 0x61, 0x64, 0x65, 0x72, 0x49,
+	0x44, 0x12, 0x1c, 0x0a, 0x09, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x43, 0x6f, 0x64, 0x65, 0x18, 0x02,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x43, 0x6f, 0x64, 0x65, 0x22,
+	0x71, 0x0a, 0x11, 0x43, 0x68, 0x65, 0x63, 0x6b, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x52, 0x65, 0x71,
+	0x75, 0x65, 0x73, 0x74, 0x12, 0x18, 0x0a, 0x07, 0x73, 0x68, 0x61, 0x72, 0x64, 0x49, 0x44, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x73, 0x68, 0x61, 0x72, 0x64, 0x49, 0x44, 0x12, 0x1a,
+	0x0a, 0x08, 0x77, 0x6f, 0x72, 0x6b, 0x65, 0x72, 0x49, 0x44, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09,
+	0x52, 0x08, 0x77, 0x6f, 0x72, 0x6b, 0x65, 0x72, 0x49, 0x44, 0x12, 0x26, 0x0a, 0x0e, 0x73, 0x65,
+	0x71, 0x75, 0x65, 0x6e, 0x63, 0x65, 0x4e, 0x75, 0x6d, 0x62, 0x65, 0x72, 0x18, 0x03, 0x20, 0x01,
+	0x28, 0x09, 0x52, 0x0e, 0x73, 0x65, 0x71, 0x75, 0x65, 0x6e, 0x63, 0x65, 0x4e, 0x75, 0x6d, 0x62,
+	0x65, 0x72, 0x22, 0x4c, 0x0a, 0x12, 0x43, 0x68, 0x65, 0x63, 0x6b, 0x70, 0x6f, 0x69, 0x6e, 0x74,
+	0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x18, 0x0a, 0x07, 0x73, 0x75, 0x63, 0x63,
+	0x65, 0x73, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x08, 0x52, 0x07, 0x73, 0x75, 0x63, 0x63, 0x65,
+	0x73, 0x73, 0x12, 0x1c, 0x0a, 0x09, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x43, 0x6f, 0x64, 0x65, 0x18,
+	0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x43, 0x6f, 0x64, 0x65,
 	0x42, 0x06, 0x5a, 0x04, 0x2e, 0x2f, 0x70, 0x62, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
@@ -386,12 +389,12 @@ func file_messages_proto_rawDescGZIP() []byte {
 
 var file_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_messages_proto_goTypes = []any{
-	(*UserRecord)(nil),        // 0: libvegas.UserRecord
-	(*Record)(nil),            // 1: libvegas.Record
-	(*VoteRequest)(nil),       // 2: libvegas.VoteRequest
-	(*VoteResponse)(nil),      // 3: libvegas.VoteResponse
-	(*HeartbeatRequest)(nil),  // 4: libvegas.HeartbeatRequest
-	(*HeartbeatResponse)(nil), // 5: libvegas.HeartbeatResponse
+	(*UserRecord)(nil),          // 0: libvegas.UserRecord
+	(*Record)(nil),              // 1: libvegas.Record
+	(*QueryLeaderRequest)(nil),  // 2: libvegas.QueryLeaderRequest
+	(*QueryLeaderResponse)(nil), // 3: libvegas.QueryLeaderResponse
+	(*CheckpointRequest)(nil),   // 4: libvegas.CheckpointRequest
+	(*CheckpointResponse)(nil),  // 5: libvegas.CheckpointResponse
 }
 var file_messages_proto_depIdxs = []int32{
 	0, // 0: libvegas.Record.userRecords:type_name -> libvegas.UserRecord

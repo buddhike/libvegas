@@ -13,21 +13,21 @@ message Record {
    repeated UserRecord userRecords = 2;
 }
 
-message VoteRequest {
-    string candidateID = 1;
-    int64 term = 2;
+message QueryLeaderRequest {
 }
 
-message VoteResponse {
-    int64 term = 1;
-    bool yes = 2;
-}
-
-message HeartbeatRequest {
+message QueryLeaderResponse {
     string leaderID = 1;
-    int64 term = 2;
+    string errorCode = 2;
 }
 
-message HeartbeatResponse {
-    int64 term = 1;
+message CheckpointRequest {
+    string shardID = 1;
+    string workerID = 2;
+    string sequenceNumber = 3; 
+}
+
+message CheckpointResponse {
+    bool success = 1;
+    string errorCode = 2;
 }
