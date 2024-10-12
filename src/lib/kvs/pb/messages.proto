@@ -3,13 +3,15 @@ package libvegas;
 option go_package = "./pb";
 
 message VoteRequest {
-    string candidateID = 1;
-    int64 term = 2;
+    int64 term = 1;
+    string candidateID = 2;
+    int64 lastLogIndex = 3;
+    int64 lastLogTerm = 4;
 }
 
 message VoteResponse {
     int64 term = 1;
-    bool yes = 2;
+    bool granted = 2;
 }
 
 message AppendEntriesRequest {
@@ -27,8 +29,10 @@ message AppendEntriesResponse {
 }
 
 message Entry {
-    string operation = 1;
-    bytes key = 2;
-    bytes value = 3;
+    int64 index = 1;
+    int64 term = 2;
+    string operation = 3;
+    bytes key = 4;
+    bytes value = 5;
 }
 

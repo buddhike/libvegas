@@ -21,6 +21,18 @@ type response struct {
 	msg    proto.Message
 }
 
+type log interface {
+	append(*pb.Entry)
+	get(int64) *pb.Entry
+	purge(int64)
+	len() int64
+	last() *pb.Entry
+}
+
+type state interface {
+	apply(*pb.Entry)
+}
+
 const (
 	stateFollower nodeState = iota
 	stateCandidate
@@ -34,11 +46,16 @@ type Node struct {
 	id               string
 	logger           *zap.SugaredLogger
 	currentLeader    string
+	commitIndex      int64
+	lastApplied      int64
 	// Requests to this leader
 	request chan request
 	// Channels to send requests to peers
-	peers []chan<- request
-	term  int64
+	peers            []chan<- request
+	term             int64
+	replicationState map[string]int64
+	log              log
+	state            state
 	// Closed by user to notify that node must stop current activity and return
 	stop chan struct{}
 	// Closed by node to indicate the successful stop
@@ -64,41 +81,90 @@ forever:
 }
 
 func (n *Node) becomeFollower() nodeState {
+	timer := time.NewTimer(n.electionTimeout)
 	voted := false
 	for {
 		select {
 		case v := <-n.request:
 			switch msg := v.msg.(type) {
 			case *pb.AppendEntriesRequest:
-				if msg.Term >= n.term {
+				var rmsg *pb.AppendEntriesResponse
+				if msg.Term < n.term {
+					rmsg = &pb.AppendEntriesResponse{
+						Term:    n.term,
+						Success: false,
+					}
+				} else {
 					n.currentLeader = msg.LeaderID
 					n.term = msg.Term
-				} else {
-					res := response{
-						peerID: n.id,
-						msg: &pb.AppendEntriesResponse{
-							Term: n.term,
-						},
+					for _, e := range msg.Entries {
+						n.log.append(e)
 					}
-					v.response <- res
+					n.commit(msg.LeaderCommit)
+					rmsg = &pb.AppendEntriesResponse{
+						Term:    n.term,
+						Success: true,
+					}
+					timer.Reset(n.electionTimeout)
 				}
-			case *pb.VoteRequest:
-				vote := !voted && msg.Term >= n.term
 				res := response{
 					peerID: n.id,
-					msg: &pb.VoteResponse{
-						Term: n.term,
-						Yes:  vote,
-					},
+					msg:    rmsg,
 				}
+				v.response <- res
+			case *pb.VoteRequest:
+				vote := n.shouldVote(voted, msg.Term, msg.LastLogTerm, msg.LastLogIndex)
 				voted = voted || vote
+				if vote {
+					timer.Reset(n.electionTimeout)
+				}
+				rmsg := pb.VoteResponse{
+					Term:    n.term,
+					Granted: vote,
+				}
+				res := response{
+					peerID: n.id,
+					msg:    &rmsg,
+				}
 				v.response <- res
 			}
-		case <-time.After(n.electionTimeout):
+		case <-timer.C:
 			return stateCandidate
 		case <-n.stop:
 			return stateExit
 		}
+	}
+}
+
+func (n *Node) commit(index int64) {
+	n.commitIndex = index
+	for i := n.commitIndex; n.lastApplied < n.commitIndex; n.lastApplied++ {
+		entry := n.log.get(i)
+		n.state.apply(entry)
+	}
+}
+
+func (n *Node) shouldVote(alereadyVoted bool, peerCurrentTerm, peerLastEntryTerm, peerLastEntryIndex int64) bool {
+	myLastEntry := n.log.last()
+	isPeerLogAsUpToDate := (peerLastEntryTerm > myLastEntry.Term) || (myLastEntry.Term == peerLastEntryTerm && peerLastEntryIndex >= myLastEntry.Index)
+	return !alereadyVoted && peerCurrentTerm >= n.term && isPeerLogAsUpToDate
+}
+
+func (n *Node) followerAppendEntries(msg *pb.AppendEntriesRequest) *pb.AppendEntriesResponse {
+	if msg.Term < n.term {
+		return &pb.AppendEntriesResponse{
+			Term:    n.term,
+			Success: false,
+		}
+	}
+	n.currentLeader = msg.LeaderID
+	n.term = msg.Term
+	for _, e := range msg.Entries {
+		n.log.append(e)
+	}
+	return &pb.AppendEntriesResponse{
+		Term:    n.term,
+		Success: true,
 	}
 }
 
@@ -164,15 +230,17 @@ func (n *Node) runElection() nodeState {
 					}
 				}
 			case *pb.VoteRequest:
-				vote := !voted && msg.Term >= n.term
-				voted = voted || vote
-				v.response <- response{
-					peerID: n.id,
-					msg: &pb.VoteResponse{
-						Term: n.term,
-						Yes:  vote,
-					},
+				vote := n.shouldVote(voted, msg.Term, msg.LastLogTerm, msg.LastLogIndex)
+				rmsg := pb.VoteResponse{
+					Term:    n.term,
+					Granted: vote,
 				}
+				res := response{
+					peerID: n.id,
+					msg:    &rmsg,
+				}
+				voted = voted || vote
+				v.response <- res
 			}
 		case <-time.After(n.electionTimeout):
 			return stateCandidate
