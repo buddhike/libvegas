@@ -95,17 +95,61 @@ func (n *Node) becomeFollower() nodeState {
 						Success: false,
 					}
 				} else {
+					timer.Reset(n.electionTimeout)
 					n.currentLeader = msg.LeaderID
 					n.term = msg.Term
-					for _, e := range msg.Entries {
-						n.log.append(e)
+					success := false
+					if len(msg.Entries) > 0 {
+						// We have entries to append
+						// We must:
+						// - ensure log matching property
+						// - truncate the log if required
+						if msg.PrevLogIndex == 0 {
+							// Leader is saying that entries should be appended to the begining
+							// of the log. Truncate the log to the begining and append entries.
+							n.log.purge(0)
+							for _, e := range msg.Entries {
+								n.log.append(e)
+							}
+							success = true
+						} else if msg.PrevLogIndex <= n.log.len() {
+							// Leader is saying that entries should be appended after PrevLogIndex.
+							// We also know that PrevLogIndex is valid in follower's log.
+							// To ensure log matching property, we read the entry in that location
+							// in follower and ensure the terms match.
+							p := n.log.get(msg.PrevLogIndex)
+							if p.Term == msg.PrevLogTerm {
+								// Now that the terms are matching, truncate any entries past
+								// PrevLogIndex and append entries.
+								if msg.PrevLogIndex != n.log.len() {
+									n.log.purge(msg.PrevLogIndex)
+								}
+								for _, e := range msg.Entries {
+									n.log.append(e)
+								}
+								success = true
+							}
+						}
+					} else {
+						// This is a heartbeat request without any entries.
+						// Follower simply acks it.
+						success = true
 					}
-					n.commit(msg.LeaderCommit)
+					// After any available entries are appended, ensure that
+					// commit index is updated to match leader's commit.
+					// If commit index is past the entry last applied, apply
+					// those entries to state.
+					// It's possible that all entries leading upto leader's commit index
+					// are not yet replicated to this follower.
+					n.commitIndex = msg.LeaderCommit
+					for i := n.commitIndex; n.lastApplied < n.commitIndex && n.commitIndex < n.log.len(); n.lastApplied++ {
+						entry := n.log.get(i)
+						n.state.apply(entry)
+					}
 					rmsg = &pb.AppendEntriesResponse{
 						Term:    n.term,
-						Success: true,
+						Success: success,
 					}
-					timer.Reset(n.electionTimeout)
 				}
 				res := response{
 					peerID: n.id,
@@ -136,36 +180,11 @@ func (n *Node) becomeFollower() nodeState {
 	}
 }
 
-func (n *Node) commit(index int64) {
-	n.commitIndex = index
-	for i := n.commitIndex; n.lastApplied < n.commitIndex; n.lastApplied++ {
-		entry := n.log.get(i)
-		n.state.apply(entry)
-	}
-}
-
 func (n *Node) shouldVote(alereadyVoted bool, peerCurrentTerm, peerLastEntryTerm, peerLastEntryIndex int64) bool {
 	myLastEntry := n.log.last()
+	// Ensure election restriction by voting if and only if peer's log is as up-to-date as this node's log
 	isPeerLogAsUpToDate := (peerLastEntryTerm > myLastEntry.Term) || (myLastEntry.Term == peerLastEntryTerm && peerLastEntryIndex >= myLastEntry.Index)
 	return !alereadyVoted && peerCurrentTerm >= n.term && isPeerLogAsUpToDate
-}
-
-func (n *Node) followerAppendEntries(msg *pb.AppendEntriesRequest) *pb.AppendEntriesResponse {
-	if msg.Term < n.term {
-		return &pb.AppendEntriesResponse{
-			Term:    n.term,
-			Success: false,
-		}
-	}
-	n.currentLeader = msg.LeaderID
-	n.term = msg.Term
-	for _, e := range msg.Entries {
-		n.log.append(e)
-	}
-	return &pb.AppendEntriesResponse{
-		Term:    n.term,
-		Success: true,
-	}
 }
 
 func (n *Node) becomeCandidate() nodeState {
