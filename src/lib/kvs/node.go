@@ -36,9 +36,9 @@ type State interface {
 	Apply(*pb.Entry)
 }
 
-type peer interface {
-	id() string
-	input() chan<- request
+type Peer interface {
+	ID() string
+	Input() chan<- request
 }
 
 const (
@@ -58,7 +58,7 @@ type Node struct {
 	lastApplied      int64
 	// Requests to this node
 	request  chan request
-	peers    []peer
+	peers    []Peer
 	term     int64
 	log      log
 	state    State
@@ -275,7 +275,7 @@ func (n *Node) runElection() nodeState {
 	timer := time.NewTimer(n.electionTimeout)
 	for {
 		select {
-		case nextPeer.input() <- req:
+		case nextPeer.Input() <- req:
 			timer.Reset(n.electionTimeout)
 			peers = peers[1:]
 			if len(peers) > 0 {
@@ -361,16 +361,16 @@ func (n *Node) becomeLeader() nodeState {
 	peerResponses := make(chan response)
 	pendingProposals := make(map[int64]request)
 	for _, p := range n.peers {
-		nextIdx[p.id()] = n.log.len()
-		sendHeartbeat[p.id()] = true
-		matchIdx[p.id()] = 0
+		nextIdx[p.ID()] = n.log.len()
+		sendHeartbeat[p.ID()] = true
+		matchIdx[p.ID()] = 0
 	}
 
 	nextPeerIdx := 0
 	nextPeer := n.peers[nextPeerIdx]
 	for {
 		var appendEntriesReq request
-		if sendHeartbeat[nextPeer.id()] {
+		if sendHeartbeat[nextPeer.ID()] {
 			m := &pb.AppendEntriesRequest{
 				Term:         n.term,
 				LeaderID:     n.id,
@@ -380,8 +380,8 @@ func (n *Node) becomeLeader() nodeState {
 				msg:      m,
 				response: peerResponses,
 			}
-		} else if n.log.len() >= nextIdx[nextPeer.id()] {
-			entries := make([]*pb.Entry, (n.log.len()-nextIdx[nextPeer.id()])+1)
+		} else if n.log.len() >= nextIdx[nextPeer.ID()] {
+			entries := make([]*pb.Entry, (n.log.len()-nextIdx[nextPeer.ID()])+1)
 			for i := range len(entries) {
 				entries[i] = n.log.get(n.log.len() + int64(i))
 			}
@@ -400,7 +400,7 @@ func (n *Node) becomeLeader() nodeState {
 			nextPeer = nil
 		}
 		select {
-		case nextPeer.input() <- appendEntriesReq:
+		case nextPeer.Input() <- appendEntriesReq:
 			nextPeerIdx++
 		case <-timer.C:
 			for k := range maps.Keys(sendHeartbeat) {
@@ -499,6 +499,10 @@ func (n *Node) becomeLeader() nodeState {
 	}
 }
 
+func (n *Node) ID() string {
+	return n.id
+}
+
 func (n *Node) Input() chan<- request {
 	return n.request
 }
@@ -507,13 +511,16 @@ func (n *Node) Done() <-chan struct{} {
 	return n.done
 }
 
-func NewNode(id string, heartbeatTimeout, electionTimeout time.Duration, log log, peers []peer, state State, stop chan struct{}, logger *zap.SugaredLogger) *Node {
+func (n *Node) SetPeers(peers []Peer) {
+	n.peers = peers
+}
+
+func NewNode(id string, heartbeatTimeout, electionTimeout time.Duration, log log, state State, stop chan struct{}, logger *zap.SugaredLogger) *Node {
 	return &Node{
 		id:               id,
 		heartbeatTimeout: heartbeatTimeout,
 		electionTimeout:  electionTimeout,
 		log:              log,
-		peers:            peers,
 		state:            state,
 		stop:             stop,
 		done:             make(chan struct{}),
