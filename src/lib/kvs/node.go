@@ -32,8 +32,8 @@ type log interface {
 	last() *pb.Entry
 }
 
-type state interface {
-	apply(*pb.Entry)
+type State interface {
+	Apply(*pb.Entry)
 }
 
 type peer interface {
@@ -49,21 +49,24 @@ const (
 )
 
 type Node struct {
+	id               string
 	heartbeatTimeout time.Duration
 	electionTimeout  time.Duration
-	id               string
 	logger           *zap.SugaredLogger
 	currentLeader    string
 	commitIndex      int64
 	lastApplied      int64
 	// Requests to this node
-	request                    chan request
-	peers                      []peer
-	term                       int64
-	log                        log
-	state                      state
-	votedFor                   string
-	requestConvertedToFollower *request
+	request  chan request
+	peers    []peer
+	term     int64
+	log      log
+	state    State
+	votedFor string
+	// Holds the request that transitioned this node to a follower.
+	// becomeFollower handles the request prior to handling new messages
+	// as a follower.
+	pendingRequest *request
 	// Closed by user to notify that node must stop current activity and return
 	stop chan struct{}
 	// Closed by node to indicate the successful stop
@@ -88,15 +91,15 @@ func (n *Node) Start() {
 func (n *Node) becomeFollower() nodeState {
 	// If node is becoming a follower because of a new term observered
 	// from a peer, handle that request first.
-	if n.requestConvertedToFollower != nil {
-		switch n.requestConvertedToFollower.msg.(type) {
+	if n.pendingRequest != nil {
+		switch n.pendingRequest.msg.(type) {
 		case *pb.AppendEntriesRequest:
-			n.appendEntries(n.requestConvertedToFollower)
+			n.appendEntries(n.pendingRequest)
 		case *pb.VoteRequest:
-			n.vote(*n.requestConvertedToFollower)
+			n.vote(*n.pendingRequest)
 		}
 	}
-	n.requestConvertedToFollower = nil
+	n.pendingRequest = nil
 	timer := time.NewTimer(n.electionTimeout)
 	for {
 		select {
@@ -205,7 +208,7 @@ func (n *Node) appendEntries(req *request) {
 		n.commitIndex = msg.LeaderCommit
 		for i := n.commitIndex; n.lastApplied < n.commitIndex; n.lastApplied++ {
 			entry := n.log.get(i)
-			n.state.apply(entry)
+			n.state.Apply(entry)
 		}
 	}
 	rmsg = &pb.AppendEntriesResponse{
@@ -221,16 +224,17 @@ func (n *Node) appendEntries(req *request) {
 
 func (n *Node) vote(req request) {
 	msg := req.msg.(*pb.VoteRequest)
-	myLastEntry := n.log.last()
-	isPeerLogAsUpToDate := (msg.LastLogTerm > myLastEntry.Term) || (myLastEntry.Term == msg.LastLogTerm && msg.LastLogIndex >= myLastEntry.Index)
+	// Get the last entry from this node's log
+	le := n.log.last()
+	isPeerLogAsUpToDate := (msg.LastLogTerm > le.Term) || (le.Term == msg.LastLogTerm && msg.LastLogIndex >= le.Index)
 	alreadyVotedThisTerm := msg.CandidateID == n.votedFor && n.term == msg.Term
-	vote := (n.votedFor != "" || alreadyVotedThisTerm) && msg.Term >= n.term && isPeerLogAsUpToDate
-	if vote {
+	granted := (n.votedFor != "" || alreadyVotedThisTerm) && msg.Term >= n.term && isPeerLogAsUpToDate
+	if granted {
 		n.updateNodeState(n.term, msg.CandidateID)
 	}
 	rmsg := pb.VoteResponse{
 		Term:    n.term,
-		Granted: vote,
+		Granted: granted,
 	}
 	res := response{
 		peerID: n.id,
@@ -297,7 +301,7 @@ func (n *Node) runElection() nodeState {
 					if msg.Term > n.term {
 						n.updateNodeState(msg.Term, "")
 					}
-					n.requestConvertedToFollower = &v
+					n.pendingRequest = &v
 					return stateFollower
 				} else {
 					v.response <- response{
@@ -321,7 +325,7 @@ func (n *Node) runElection() nodeState {
 					timer.Reset(n.electionTimeout)
 					n.vote(req)
 				} else {
-					n.requestConvertedToFollower = &v
+					n.pendingRequest = &v
 					return stateFollower
 				}
 			case *pb.ProposeRequest:
@@ -427,7 +431,7 @@ func (n *Node) becomeLeader() nodeState {
 					n.commitIndex = smallestMatchIndex
 					for i := n.commitIndex; n.lastApplied < n.commitIndex; n.lastApplied++ {
 						entry := n.log.get(i)
-						n.state.apply(entry)
+						n.state.Apply(entry)
 					}
 
 					for k := range maps.Keys(pendingProposals) {
@@ -461,7 +465,7 @@ func (n *Node) becomeLeader() nodeState {
 				if r.Term > n.term {
 					// TODO: Cancel pending proposals
 					n.updateNodeState(r.Term, "")
-					n.requestConvertedToFollower = &req
+					n.pendingRequest = &req
 					return stateFollower
 				}
 				res := response{
@@ -475,7 +479,7 @@ func (n *Node) becomeLeader() nodeState {
 			case *pb.VoteRequest:
 				if r.Term > n.term {
 					n.updateNodeState(r.Term, "")
-					n.requestConvertedToFollower = &req
+					n.pendingRequest = &req
 					return stateFollower
 				}
 				res := response{
@@ -495,10 +499,25 @@ func (n *Node) becomeLeader() nodeState {
 	}
 }
 
-func NewNode(heartbeatTimeout, electionTimeout time.Duration, logger *zap.SugaredLogger) *Node {
+func (n *Node) Input() chan<- request {
+	return n.request
+}
+
+func (n *Node) Done() <-chan struct{} {
+	return n.done
+}
+
+func NewNode(id string, heartbeatTimeout, electionTimeout time.Duration, log log, peers []peer, state State, stop chan struct{}, logger *zap.SugaredLogger) *Node {
 	return &Node{
+		id:               id,
 		heartbeatTimeout: heartbeatTimeout,
 		electionTimeout:  electionTimeout,
+		log:              log,
+		peers:            peers,
+		state:            state,
+		stop:             stop,
+		done:             make(chan struct{}),
+		request:          make(chan request),
 		logger:           logger,
 	}
 }
