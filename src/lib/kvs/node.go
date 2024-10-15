@@ -1,6 +1,8 @@
 package kvs
 
 import (
+	"maps"
+	"math"
 	"slices"
 	"time"
 
@@ -19,6 +21,7 @@ type request struct {
 type response struct {
 	peerID string
 	msg    proto.Message
+	req    *request
 }
 
 type log interface {
@@ -31,6 +34,11 @@ type log interface {
 
 type state interface {
 	apply(*pb.Entry)
+}
+
+type peer interface {
+	id() string
+	input() chan<- request
 }
 
 const (
@@ -48,14 +56,14 @@ type Node struct {
 	currentLeader    string
 	commitIndex      int64
 	lastApplied      int64
-	// Requests to this leader
-	request chan request
-	// Channels to send requests to peers
-	peers            []chan<- request
-	term             int64
-	replicationState map[string]int64
-	log              log
-	state            state
+	// Requests to this node
+	request                    chan request
+	peers                      []peer
+	term                       int64
+	log                        log
+	state                      state
+	votedFor                   string
+	requestConvertedToFollower *request
 	// Closed by user to notify that node must stop current activity and return
 	stop chan struct{}
 	// Closed by node to indicate the successful stop
@@ -64,113 +72,81 @@ type Node struct {
 
 func (n *Node) Start() {
 	s := stateFollower
-forever:
 	for s != stateExit {
 		switch s {
 		case stateFollower:
-			n.becomeFollower()
+			s = n.becomeFollower()
 		case stateCandidate:
-			n.becomeCandidate()
+			s = n.becomeCandidate()
 		case stateLeader:
-			n.becomeLeader()
-		case stateExit:
-			break forever
+			s = n.becomeLeader()
 		}
 	}
 	close(n.done)
 }
 
 func (n *Node) becomeFollower() nodeState {
+	// If node is becoming a follower because of a new term observered
+	// from a peer, handle that request first.
+	if n.requestConvertedToFollower != nil {
+		switch n.requestConvertedToFollower.msg.(type) {
+		case *pb.AppendEntriesRequest:
+			n.appendEntries(n.requestConvertedToFollower)
+		case *pb.VoteRequest:
+			n.vote(*n.requestConvertedToFollower)
+		}
+	}
+	n.requestConvertedToFollower = nil
 	timer := time.NewTimer(n.electionTimeout)
-	voted := false
 	for {
 		select {
 		case v := <-n.request:
 			switch msg := v.msg.(type) {
 			case *pb.AppendEntriesRequest:
-				var rmsg *pb.AppendEntriesResponse
 				if msg.Term < n.term {
-					rmsg = &pb.AppendEntriesResponse{
-						Term:    n.term,
-						Success: false,
+					v.response <- response{
+						peerID: n.id,
+						msg: &pb.AppendEntriesResponse{
+							Term:    n.term,
+							Success: false,
+						},
 					}
 				} else {
 					timer.Reset(n.electionTimeout)
-					n.currentLeader = msg.LeaderID
-					n.term = msg.Term
-					success := false
-					if len(msg.Entries) > 0 {
-						// We have entries to append
-						// We must:
-						// - ensure log matching property
-						// - truncate the log if required
-						if msg.PrevLogIndex == 0 {
-							// Leader is saying that entries should be appended to the begining
-							// of the log. Truncate the log to the begining and append entries.
-							n.log.purge(0)
-							for _, e := range msg.Entries {
-								n.log.append(e)
-							}
-							success = true
-						} else if msg.PrevLogIndex <= n.log.len() {
-							// Leader is saying that entries should be appended after PrevLogIndex.
-							// We also know that PrevLogIndex is valid in follower's log.
-							// To ensure log matching property, we read the entry in that location
-							// in follower and ensure the terms match.
-							p := n.log.get(msg.PrevLogIndex)
-							if p.Term == msg.PrevLogTerm {
-								// Now that the terms are matching, truncate any entries past
-								// PrevLogIndex and append entries.
-								if msg.PrevLogIndex != n.log.len() {
-									n.log.purge(msg.PrevLogIndex)
-								}
-								for _, e := range msg.Entries {
-									n.log.append(e)
-								}
-								success = true
-							}
-						}
-					} else {
-						// This is a heartbeat request without any entries.
-						// Follower simply acks it.
-						success = true
+					if n.term != msg.Term {
+						n.currentLeader = msg.LeaderID
+						n.updateNodeState(msg.Term, "")
 					}
-					// After any available entries are appended, ensure that
-					// commit index is updated to match leader's commit.
-					// If commit index is past the entry last applied, apply
-					// those entries to state.
-					// It's possible that all entries leading upto leader's commit index
-					// are not yet replicated to this follower.
-					n.commitIndex = msg.LeaderCommit
-					for i := n.commitIndex; n.lastApplied < n.commitIndex && n.commitIndex < n.log.len(); n.lastApplied++ {
-						entry := n.log.get(i)
-						n.state.apply(entry)
-					}
-					rmsg = &pb.AppendEntriesResponse{
-						Term:    n.term,
-						Success: success,
-					}
+					n.appendEntries(&v)
 				}
-				res := response{
-					peerID: n.id,
-					msg:    rmsg,
-				}
-				v.response <- res
 			case *pb.VoteRequest:
-				vote := n.shouldVote(voted, msg.Term, msg.LastLogTerm, msg.LastLogIndex)
-				voted = voted || vote
-				if vote {
+				if msg.Term < n.term {
+					v.response <- response{
+						peerID: n.id,
+						msg: &pb.VoteResponse{
+							Term:    n.term,
+							Granted: false,
+						},
+					}
+				} else {
 					timer.Reset(n.electionTimeout)
+					if n.term != msg.Term {
+						n.updateNodeState(msg.Term, "")
+					}
+					n.vote(v)
 				}
-				rmsg := pb.VoteResponse{
-					Term:    n.term,
-					Granted: vote,
-				}
-				res := response{
+			case *pb.ProposeRequest:
+				// Followers only respond to peers. Proposals
+				// from clients are rejected. Rejection response
+				// indicate the leader id so that client and re-attempt
+				// that request with the leader.
+				v.response <- response{
 					peerID: n.id,
-					msg:    &rmsg,
+					msg: &pb.PropseResponse{
+						Accepted:      false,
+						CurrentLeader: n.currentLeader,
+					},
 				}
-				v.response <- res
 			}
 		case <-timer.C:
 			return stateCandidate
@@ -180,11 +156,92 @@ func (n *Node) becomeFollower() nodeState {
 	}
 }
 
-func (n *Node) shouldVote(alereadyVoted bool, peerCurrentTerm, peerLastEntryTerm, peerLastEntryIndex int64) bool {
+func (n *Node) appendEntries(req *request) {
+	msg := req.msg.(*pb.AppendEntriesRequest)
+	var rmsg *pb.AppendEntriesResponse
+	n.currentLeader = msg.LeaderID
+	success := false
+	if len(msg.Entries) > 0 {
+		// We have entries to append
+		// We must:
+		// - ensure log matching property
+		// - truncate the log if required
+		if msg.PrevLogIndex == 0 {
+			// Leader is saying that entries should be appended to the begining
+			// of the log. Truncate the log to the begining and append entries.
+			n.log.purge(0)
+			for _, e := range msg.Entries {
+				n.log.append(e)
+			}
+			success = true
+		} else if msg.PrevLogIndex <= n.log.len() {
+			// Leader is saying that entries should be appended after PrevLogIndex.
+			// We also know that PrevLogIndex is valid in follower's log.
+			// To ensure log matching property, we read the entry in that location
+			// in follower and ensure the terms match.
+			p := n.log.get(msg.PrevLogIndex)
+			if p.Term == msg.PrevLogTerm {
+				// Now that the terms are matching, truncate any entries past
+				// PrevLogIndex and append entries.
+				if msg.PrevLogIndex != n.log.len() {
+					n.log.purge(msg.PrevLogIndex)
+				}
+				for _, e := range msg.Entries {
+					n.log.append(e)
+				}
+				success = true
+			}
+		}
+	} else {
+		// This is a heartbeat request without any entries.
+		// Follower simply acks it.
+		success = true
+	}
+	// After any available entries are appended, ensure that
+	// commit index is updated to match leader's commit.
+	// If commit index is past the entry last applied, apply
+	// those entries to state.
+	if n.log.len() >= msg.LeaderCommit && n.log.get(msg.LeaderCommit).Term == n.term {
+		n.commitIndex = msg.LeaderCommit
+		for i := n.commitIndex; n.lastApplied < n.commitIndex; n.lastApplied++ {
+			entry := n.log.get(i)
+			n.state.apply(entry)
+		}
+	}
+	rmsg = &pb.AppendEntriesResponse{
+		Term:    n.term,
+		Success: success,
+	}
+	res := response{
+		peerID: n.id,
+		msg:    rmsg,
+	}
+	req.response <- res
+}
+
+func (n *Node) vote(req request) {
+	msg := req.msg.(*pb.VoteRequest)
 	myLastEntry := n.log.last()
-	// Ensure election restriction by voting if and only if peer's log is as up-to-date as this node's log
-	isPeerLogAsUpToDate := (peerLastEntryTerm > myLastEntry.Term) || (myLastEntry.Term == peerLastEntryTerm && peerLastEntryIndex >= myLastEntry.Index)
-	return !alereadyVoted && peerCurrentTerm >= n.term && isPeerLogAsUpToDate
+	isPeerLogAsUpToDate := (msg.LastLogTerm > myLastEntry.Term) || (myLastEntry.Term == msg.LastLogTerm && msg.LastLogIndex >= myLastEntry.Index)
+	alreadyVotedThisTerm := msg.CandidateID == n.votedFor && n.term == msg.Term
+	vote := (n.votedFor != "" || alreadyVotedThisTerm) && msg.Term >= n.term && isPeerLogAsUpToDate
+	if vote {
+		n.updateNodeState(n.term, msg.CandidateID)
+	}
+	rmsg := pb.VoteResponse{
+		Term:    n.term,
+		Granted: vote,
+	}
+	res := response{
+		peerID: n.id,
+		msg:    &rmsg,
+	}
+	req.response <- res
+}
+
+func (n *Node) updateNodeState(term int64, votedFor string) {
+	n.term = term
+	n.votedFor = votedFor
 }
 
 func (n *Node) becomeCandidate() nodeState {
@@ -197,39 +254,39 @@ func (n *Node) becomeCandidate() nodeState {
 
 func (n *Node) runElection() nodeState {
 	n.term++
+	n.updateNodeState(n.term, "")
 	peerResponses := make(chan response)
 	vr := pb.VoteRequest{
 		CandidateID: n.id,
 		Term:        n.term,
 	}
-	// Write vote request to each peer as a non blocking operation.
-	// This is essential because, peers retry sending a protocol
-	// requests indefinitly. Peers channel is non buffered.
-	// We don't want to block an election due an inflight request to an
-	// unavailable peer at the time.
-	for _, p := range n.peers {
-		select {
-		case p <- request{
-			msg:      &vr,
-			response: peerResponses,
-		}:
-		default:
-			continue
-		}
-	}
-
+	peers := slices.Clone(n.peers)
 	votes := 1
-	// TODO: This must persistent
-	voted := false
+	req := request{
+		msg:      &vr,
+		response: peerResponses,
+	}
+	nextPeer := peers[0]
+	quorumSize := len(n.peers) + 1
+	timer := time.NewTimer(n.electionTimeout)
 	for {
 		select {
+		case nextPeer.input() <- req:
+			timer.Reset(n.electionTimeout)
+			peers = peers[1:]
+			if len(peers) > 0 {
+				nextPeer = peers[0]
+			} else {
+				nextPeer = nil
+			}
 		case v := <-peerResponses:
+			timer.Reset(n.electionTimeout)
 			switch msg := v.msg.(type) {
 			case *pb.VoteResponse:
-				if msg.Term == n.term {
+				if msg.Term == n.term && msg.Granted {
 					votes++
 				}
-				if votes >= ((len(n.peers)+1)/2)+1 {
+				if votes >= (quorumSize/2)+1 {
 					return stateLeader
 				}
 			}
@@ -237,87 +294,203 @@ func (n *Node) runElection() nodeState {
 			switch msg := v.msg.(type) {
 			case *pb.AppendEntriesRequest:
 				if msg.Term >= n.term {
-					n.term = msg.Term
-					n.currentLeader = msg.LeaderID
+					if msg.Term > n.term {
+						n.updateNodeState(msg.Term, "")
+					}
+					n.requestConvertedToFollower = &v
 					return stateFollower
 				} else {
 					v.response <- response{
 						peerID: n.id,
 						msg: &pb.AppendEntriesResponse{
-							Term: n.term,
+							Term:    n.term,
+							Success: false,
 						},
 					}
 				}
 			case *pb.VoteRequest:
-				vote := n.shouldVote(voted, msg.Term, msg.LastLogTerm, msg.LastLogIndex)
-				rmsg := pb.VoteResponse{
-					Term:    n.term,
-					Granted: vote,
+				if n.term > msg.Term {
+					v.response <- response{
+						peerID: n.id,
+						msg: &pb.VoteResponse{
+							Term:    n.term,
+							Granted: false,
+						},
+					}
+				} else if n.term == msg.Term {
+					timer.Reset(n.electionTimeout)
+					n.vote(req)
+				} else {
+					n.requestConvertedToFollower = &v
+					return stateFollower
 				}
-				res := response{
+			case *pb.ProposeRequest:
+				// Candidates only respond to peers. Proposals
+				// from clients are rejected.
+				v.response <- response{
 					peerID: n.id,
-					msg:    &rmsg,
+					msg: &pb.PropseResponse{
+						Accepted:      false,
+						CurrentLeader: "",
+					},
 				}
-				voted = voted || vote
-				v.response <- res
 			}
-		case <-time.After(n.electionTimeout):
+		case <-timer.C:
 			return stateCandidate
 		case <-n.stop:
 			return stateExit
+		default:
+			if len(peers) > 1 {
+				peers = peers[1:]
+				peers = append(peers, nextPeer)
+				nextPeer = peers[0]
+			}
 		}
 	}
 }
 
 func (n *Node) becomeLeader() nodeState {
-	for {
-		select {
-		case <-time.After(n.heartbeatTimeout):
-			s := n.beatOnce()
-			if s != stateLeader {
-				return s
-			}
-		case <-n.request:
-			// TODO: handle checkpoints
-		case <-n.stop:
-			return stateExit
-		}
+	nextIdx := make(map[string]int64)
+	sendHeartbeat := make(map[string]bool)
+	matchIdx := make(map[string]int64)
+	timer := time.NewTimer(time.Duration(0))
+	peerResponses := make(chan response)
+	pendingProposals := make(map[int64]request)
+	for _, p := range n.peers {
+		nextIdx[p.id()] = n.log.len()
+		sendHeartbeat[p.id()] = true
+		matchIdx[p.id()] = 0
 	}
-}
 
-func (n *Node) beatOnce() nodeState {
-	responses := make(chan response)
-	msg := pb.AppendEntriesRequest{
-		Term:     n.term,
-		LeaderID: n.id,
-	}
-	req := request{
-		msg:      &msg,
-		response: responses,
-	}
-	peers := slices.Clone(n.peers)
 	nextPeerIdx := 0
-	responseCount := 0
+	nextPeer := n.peers[nextPeerIdx]
 	for {
+		var appendEntriesReq request
+		if sendHeartbeat[nextPeer.id()] {
+			m := &pb.AppendEntriesRequest{
+				Term:         n.term,
+				LeaderID:     n.id,
+				LeaderCommit: n.commitIndex,
+			}
+			appendEntriesReq = request{
+				msg:      m,
+				response: peerResponses,
+			}
+		} else if n.log.len() >= nextIdx[nextPeer.id()] {
+			entries := make([]*pb.Entry, (n.log.len()-nextIdx[nextPeer.id()])+1)
+			for i := range len(entries) {
+				entries[i] = n.log.get(n.log.len() + int64(i))
+			}
+
+			m := &pb.AppendEntriesRequest{
+				Term:         n.term,
+				LeaderID:     n.id,
+				LeaderCommit: n.commitIndex,
+				Entries:      entries,
+			}
+			appendEntriesReq = request{
+				msg:      m,
+				response: peerResponses,
+			}
+		} else {
+			nextPeer = nil
+		}
 		select {
-		case peers[nextPeerIdx] <- req:
-			peers = peers[1:]
-		case res := <-responses:
+		case nextPeer.input() <- appendEntriesReq:
+			nextPeerIdx++
+		case <-timer.C:
+			for k := range maps.Keys(sendHeartbeat) {
+				sendHeartbeat[k] = true
+			}
+		case res := <-peerResponses:
 			msg := res.msg.(*pb.AppendEntriesResponse)
-			if msg.Term == n.term {
-				responseCount++
-				if responseCount >= len(n.peers)/2 {
-					return stateLeader
-				}
-			} else if msg.Term > n.term {
+			if msg.Term > n.term {
 				n.term = msg.Term
 				return stateFollower
 			}
+			reqMsg := res.req.msg.(*pb.AppendEntriesRequest)
+			if msg.Success && len(reqMsg.Entries) > 0 {
+				matchIdx[res.peerID] = reqMsg.Entries[len(reqMsg.Entries)-1].Index
+				nextIdx[res.peerID] = reqMsg.Entries[len(reqMsg.Entries)-1].Index + 1
+			} else {
+				nextIdx[res.peerID] = nextIdx[res.peerID] - 1
+			}
+			smallestMatchIndex := int64(math.MaxInt64)
+			for k := range maps.Keys(matchIdx) {
+				if matchIdx[k] < int64(smallestMatchIndex) {
+					smallestMatchIndex = matchIdx[k]
+				}
+			}
+			if n.commitIndex < smallestMatchIndex {
+				e := n.log.get(smallestMatchIndex)
+				if e.Term == n.term {
+					n.commitIndex = smallestMatchIndex
+					for i := n.commitIndex; n.lastApplied < n.commitIndex; n.lastApplied++ {
+						entry := n.log.get(i)
+						n.state.apply(entry)
+					}
+
+					for k := range maps.Keys(pendingProposals) {
+						if k <= n.commitIndex {
+							r := pendingProposals[k]
+							pendingProposals[k].response <- response{
+								peerID: n.id,
+								req:    &r,
+								msg: &pb.PropseResponse{
+									Accepted: true,
+								},
+							}
+						}
+					}
+				}
+			}
+		case req := <-n.request:
+			timer.Reset(n.electionTimeout)
+			switch r := req.msg.(type) {
+			case *pb.ProposeRequest:
+				e := &pb.Entry{
+					Index:     n.log.len() + 1,
+					Term:      n.term,
+					Operation: r.Operation,
+					Key:       r.Key,
+					Value:     r.Value,
+				}
+				n.log.append(e)
+				pendingProposals[e.Index] = req
+			case *pb.AppendEntriesRequest:
+				if r.Term > n.term {
+					// TODO: Cancel pending proposals
+					n.updateNodeState(r.Term, "")
+					n.requestConvertedToFollower = &req
+					return stateFollower
+				}
+				res := response{
+					peerID: n.id,
+					msg: &pb.AppendEntriesResponse{
+						Term:    n.term,
+						Success: false,
+					},
+				}
+				req.response <- res
+			case *pb.VoteRequest:
+				if r.Term > n.term {
+					n.updateNodeState(r.Term, "")
+					n.requestConvertedToFollower = &req
+					return stateFollower
+				}
+				res := response{
+					peerID: n.id,
+					msg: &pb.VoteResponse{
+						Term:    n.term,
+						Granted: false,
+					},
+				}
+				req.response <- res
+			}
+		case <-n.stop:
+			return stateExit
 		default:
 			nextPeerIdx++
-			if nextPeerIdx >= len(peers) {
-				nextPeerIdx = 0
-			}
 		}
 	}
 }

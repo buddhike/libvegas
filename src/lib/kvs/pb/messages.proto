@@ -28,6 +28,17 @@ message AppendEntriesResponse {
     bool success = 2;
 }
 
+message ProposeRequest {
+    string operation = 1;
+    bytes key = 2;
+    bytes value = 3;
+}
+
+message PropseResponse {
+    bool accepted = 1;
+    string currentLeader = 2;
+}
+
 message Entry {
     int64 index = 1;
     int64 term = 2;
