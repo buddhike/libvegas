@@ -226,9 +226,11 @@ func (n *Node) vote(req request) {
 	msg := req.msg.(*pb.VoteRequest)
 	// Get the last entry from this node's log
 	le := n.log.last()
-	isPeerLogAsUpToDate := (msg.LastLogTerm > le.Term) || (le.Term == msg.LastLogTerm && msg.LastLogIndex >= le.Index)
-	alreadyVotedThisTerm := msg.CandidateID == n.votedFor && n.term == msg.Term
-	granted := (n.votedFor != "" || alreadyVotedThisTerm) && msg.Term >= n.term && isPeerLogAsUpToDate
+	isPeerLogAsUpToDate := (le == nil) || (msg.LastLogTerm > le.Term) || (le.Term == msg.LastLogTerm && msg.LastLogIndex >= le.Index)
+	alreadyVotedThisCandidateInSameTerm := msg.CandidateID == n.votedFor && n.term == msg.Term
+	termIsCurrentOrNew := msg.Term >= n.term
+	haventVotedYet := n.votedFor == ""
+	granted := (haventVotedYet || alreadyVotedThisCandidateInSameTerm) && termIsCurrentOrNew && isPeerLogAsUpToDate
 	if granted {
 		n.updateNodeState(n.term, msg.CandidateID)
 	}
