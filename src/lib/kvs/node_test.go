@@ -11,7 +11,7 @@ import (
 )
 
 func TestNode(t *testing.T) {
-	z, err := zap.NewProduction()
+	z, err := zap.NewDevelopment()
 	assert.NoError(t, err)
 	logger := z.Sugar()
 
@@ -31,12 +31,42 @@ func TestNode(t *testing.T) {
 	go n3.Start()
 	go n4.Start()
 	go n5.Start()
-	time.Sleep(time.Minute)
+	time.Sleep(time.Second * 5)
+	nodes := map[string]*Node{
+		"n1": n1,
+		"n2": n2,
+		"n3": n3,
+		"n4": n4,
+		"n5": n5,
+	}
+
+	resc := make(chan Res)
+	nid := "n1"
+	accepted := false
+	for !accepted {
+		t.Logf("attempting proposal: %s", nid)
+		n := nodes[nid]
+		n.Input() <- Req{
+			Msg: &pb.ProposeRequest{
+				Operation: "SET",
+				Key:       []byte("k1"),
+				Value:     []byte("v1"),
+			},
+			Response: resc,
+		}
+		r := <-resc
+		pr := r.Msg.(*pb.PropseResponse)
+		accepted = pr.Accepted
+		if !accepted {
+			nid = pr.CurrentLeader
+		}
+	}
 }
 
 func newTestNode(id string, logger *zap.SugaredLogger) *Node {
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 	electionTimeout := rnd.Intn(100) + 100
+	logger.Infof("node %s %d", id, electionTimeout)
 	log := &inMemoryLog{
 		entries: make([]*pb.Entry, 0),
 	}

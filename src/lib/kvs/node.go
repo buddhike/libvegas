@@ -89,7 +89,7 @@ func (n *Node) Start() {
 }
 
 func (n *Node) becomeFollower() nodeState {
-	n.logger.Infof("pebble become follower %s", n.id)
+	n.logger.Infof("pebble became follower id: %s term: %d", n.id, n.term)
 	// If node is becoming a follower because of a new term observered
 	// from a peer, handle that request first.
 	if n.pendingRequest != nil {
@@ -118,9 +118,10 @@ func (n *Node) becomeFollower() nodeState {
 					}
 				} else {
 					timer.Reset(n.electionTimeout)
+					n.currentLeader = msg.LeaderID
 					if n.term != msg.Term {
-						n.currentLeader = msg.LeaderID
 						n.updateNodeState(msg.Term, "")
+						n.logger.Infof("pebble became follower id: %s term: %d", n.id, n.term)
 					}
 					n.appendEntries(&req)
 				}
@@ -173,6 +174,7 @@ func (n *Node) appendEntries(req *Req) {
 		// We must:
 		// - ensure log matching property
 		// - truncate the log if required
+		// If we cannot satisfy these properties, respond as unsuccessful
 		if msg.PrevLogIndex == 0 {
 			// Leader is saying that entries should be appended to the begining
 			// of the log. Truncate the log to the begining and append entries.
@@ -200,8 +202,7 @@ func (n *Node) appendEntries(req *Req) {
 			}
 		}
 	} else {
-		// This is a heartbeat request without any entries.
-		// Follower simply acks it.
+		// This is a heartbeat request without any entries
 		success = true
 	}
 	// After any available entries are appended, ensure that
@@ -224,6 +225,7 @@ func (n *Node) appendEntries(req *Req) {
 		Msg:    rmsg,
 		Req:    req,
 	}
+	// n.logger.Debugf("pebble append entries node: %s term: %d leader: %s leader-term: %d success: %v", n.id, n.term, msg.LeaderID, msg.Term, success)
 	req.Response <- res
 }
 
@@ -257,7 +259,7 @@ func (n *Node) updateNodeState(term int64, votedFor string) {
 }
 
 func (n *Node) becomeCandidate() nodeState {
-	n.logger.Infof("pebble became candidate: %s", n.id)
+	n.logger.Infof("pebble became candidate id: %s term: %d", n.id, n.term)
 	result := stateCandidate
 	for result == stateCandidate {
 		result = n.runElection()
@@ -373,11 +375,12 @@ func (n *Node) runElection() nodeState {
 }
 
 func (n *Node) becomeLeader() nodeState {
-	n.logger.Infof("pebble became leader: %s", n.id)
+	n.logger.Infof("pebble became leader id: %s term: %d", n.id, n.term)
 	nextIdx := make(map[string]int64)
 	sendHeartbeat := make(map[string]bool)
 	matchIdx := make(map[string]int64)
-	timer := time.NewTimer(time.Duration(0))
+	idleTimer := time.NewTimer(n.heartbeatTimeout)
+	idleTimer.Stop()
 	peerResponses := make(chan Res)
 	numOutstandingResponses := 0
 	defer func() {
@@ -385,17 +388,19 @@ func (n *Node) becomeLeader() nodeState {
 	}()
 	pendingProposals := make(map[int64]Req)
 	for _, p := range n.peers {
-		nextIdx[p.ID()] = n.log.Len()
+		nextIdx[p.ID()] = n.log.Len() + 1
 		sendHeartbeat[p.ID()] = true
 		matchIdx[p.ID()] = 0
 	}
 
 	nextPeerIdx := 0
+	isIdle := false
 	for {
 		nextPeer := n.peers[nextPeerIdx]
 		nextPeerInput := nextPeer.Input()
 		var appendEntriesReq Req
 		if sendHeartbeat[nextPeer.ID()] {
+			sendHeartbeat[nextPeer.ID()] = false
 			m := &pb.AppendEntriesRequest{
 				Term:         n.term,
 				LeaderID:     n.id,
@@ -405,10 +410,13 @@ func (n *Node) becomeLeader() nodeState {
 				Msg:      m,
 				Response: peerResponses,
 			}
+			// n.logger.Debugf("pebble heartbeat leader: %s term: %d peer: %s", n.id, n.term, nextPeer.ID())
 		} else if n.log.Len() >= nextIdx[nextPeer.ID()] {
-			entries := make([]*pb.Entry, (n.log.Len()-nextIdx[nextPeer.ID()])+1)
+			idx := nextIdx[nextPeer.ID()]
+			nextIdx[nextPeer.ID()] = int64(idx + 1)
+			entries := make([]*pb.Entry, (n.log.Len()-idx)+1)
 			for i := range len(entries) {
-				entries[i] = n.log.Get(n.log.Len() + int64(i))
+				entries[i] = n.log.Get((idx - 1) + int64(i))
 			}
 
 			m := &pb.AppendEntriesRequest{
@@ -422,13 +430,19 @@ func (n *Node) becomeLeader() nodeState {
 				Response: peerResponses,
 			}
 		} else {
-			nextPeer = nil
+			nextPeerInput = nil
 		}
 
-		if nextPeer == nil {
-			timer.Reset(n.heartbeatTimeout)
+		if nextPeerInput == nil {
+			// There's nothing to be sent to a peer.
+			// Start idle timer if it's not already running.
+			if !isIdle {
+				isIdle = true
+				idleTimer.Reset(n.heartbeatTimeout)
+			}
 		} else {
-			timer.Stop()
+			isIdle = false
+			idleTimer.Stop()
 		}
 
 		select {
@@ -438,7 +452,7 @@ func (n *Node) becomeLeader() nodeState {
 			if nextPeerIdx >= len(n.peers) {
 				nextPeerIdx = 0
 			}
-		case <-timer.C:
+		case <-idleTimer.C:
 			for k := range maps.Keys(sendHeartbeat) {
 				sendHeartbeat[k] = true
 			}
@@ -450,11 +464,13 @@ func (n *Node) becomeLeader() nodeState {
 				return stateFollower
 			}
 			reqMsg := res.Req.Msg.(*pb.AppendEntriesRequest)
-			if msg.Success && len(reqMsg.Entries) > 0 {
-				matchIdx[res.PeerID] = reqMsg.Entries[len(reqMsg.Entries)-1].Index
-				nextIdx[res.PeerID] = reqMsg.Entries[len(reqMsg.Entries)-1].Index + 1
-			} else {
-				nextIdx[res.PeerID] = nextIdx[res.PeerID] - 1
+			if len(reqMsg.Entries) > 0 {
+				if msg.Success {
+					matchIdx[res.PeerID] = reqMsg.Entries[len(reqMsg.Entries)-1].Index
+					nextIdx[res.PeerID] = reqMsg.Entries[len(reqMsg.Entries)-1].Index + 1
+				} else {
+					nextIdx[res.PeerID] = nextIdx[res.PeerID] - 1
+				}
 			}
 			smallestMatchIndex := int64(math.MaxInt64)
 			for k := range maps.Keys(matchIdx) {
