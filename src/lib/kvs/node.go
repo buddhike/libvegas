@@ -91,6 +91,7 @@ func (n *Node) Start() {
 func (n *Node) becomeFollower() nodeState {
 	// If node is becoming a follower because of a new term observered
 	// from a peer, handle that request first.
+	n.logger.Infof("pebble become follower %s", n.id)
 	if n.pendingRequest != nil {
 		switch n.pendingRequest.msg.(type) {
 		case *pb.AppendEntriesRequest:
@@ -103,16 +104,17 @@ func (n *Node) becomeFollower() nodeState {
 	timer := time.NewTimer(n.electionTimeout)
 	for {
 		select {
-		case v := <-n.request:
-			switch msg := v.msg.(type) {
+		case req := <-n.request:
+			switch msg := req.msg.(type) {
 			case *pb.AppendEntriesRequest:
 				if msg.Term < n.term {
-					v.response <- response{
+					req.response <- response{
 						peerID: n.id,
 						msg: &pb.AppendEntriesResponse{
 							Term:    n.term,
 							Success: false,
 						},
+						req: &req,
 					}
 				} else {
 					timer.Reset(n.electionTimeout)
@@ -120,35 +122,37 @@ func (n *Node) becomeFollower() nodeState {
 						n.currentLeader = msg.LeaderID
 						n.updateNodeState(msg.Term, "")
 					}
-					n.appendEntries(&v)
+					n.appendEntries(&req)
 				}
 			case *pb.VoteRequest:
 				if msg.Term < n.term {
-					v.response <- response{
+					req.response <- response{
 						peerID: n.id,
 						msg: &pb.VoteResponse{
 							Term:    n.term,
 							Granted: false,
 						},
+						req: &req,
 					}
 				} else {
 					timer.Reset(n.electionTimeout)
 					if n.term != msg.Term {
 						n.updateNodeState(msg.Term, "")
 					}
-					n.vote(v)
+					n.vote(req)
 				}
 			case *pb.ProposeRequest:
 				// Followers only respond to peers. Proposals
 				// from clients are rejected. Rejection response
 				// indicate the leader id so that client and re-attempt
 				// that request with the leader.
-				v.response <- response{
+				req.response <- response{
 					peerID: n.id,
 					msg: &pb.PropseResponse{
 						Accepted:      false,
 						CurrentLeader: n.currentLeader,
 					},
+					req: &req,
 				}
 			}
 		case <-timer.C:
@@ -204,7 +208,7 @@ func (n *Node) appendEntries(req *request) {
 	// commit index is updated to match leader's commit.
 	// If commit index is past the entry last applied, apply
 	// those entries to state.
-	if n.log.len() >= msg.LeaderCommit && n.log.get(msg.LeaderCommit).Term == n.term {
+	if msg.LeaderCommit > 0 && n.log.len() > 0 && n.log.len() >= msg.LeaderCommit && n.log.get(msg.LeaderCommit).Term == n.term {
 		n.commitIndex = msg.LeaderCommit
 		for i := n.commitIndex; n.lastApplied < n.commitIndex; n.lastApplied++ {
 			entry := n.log.get(i)
@@ -218,6 +222,7 @@ func (n *Node) appendEntries(req *request) {
 	res := response{
 		peerID: n.id,
 		msg:    rmsg,
+		req:    req,
 	}
 	req.response <- res
 }
@@ -241,6 +246,7 @@ func (n *Node) vote(req request) {
 	res := response{
 		peerID: n.id,
 		msg:    &rmsg,
+		req:    &req,
 	}
 	req.response <- res
 }
@@ -251,17 +257,22 @@ func (n *Node) updateNodeState(term int64, votedFor string) {
 }
 
 func (n *Node) becomeCandidate() nodeState {
-	o := stateCandidate
-	for o == stateCandidate {
-		o = n.runElection()
+	n.logger.Infof("pebble became candidate: %s", n.id)
+	result := stateCandidate
+	for result == stateCandidate {
+		result = n.runElection()
 	}
-	return 0
+	return result
 }
 
 func (n *Node) runElection() nodeState {
 	n.term++
 	n.updateNodeState(n.term, "")
 	peerResponses := make(chan response)
+	numOutstandingResponses := 0
+	defer func() {
+		go n.drain(peerResponses, numOutstandingResponses)
+	}()
 	vr := pb.VoteRequest{
 		CandidateID: n.id,
 		Term:        n.term,
@@ -273,19 +284,24 @@ func (n *Node) runElection() nodeState {
 		response: peerResponses,
 	}
 	nextPeer := peers[0]
+	nextPeerInput := nextPeer.Input()
 	quorumSize := len(n.peers) + 1
 	timer := time.NewTimer(n.electionTimeout)
 	for {
 		select {
-		case nextPeer.Input() <- req:
+		case nextPeerInput <- req:
 			timer.Reset(n.electionTimeout)
+			numOutstandingResponses++
 			peers = peers[1:]
 			if len(peers) > 0 {
 				nextPeer = peers[0]
+				nextPeerInput = nextPeer.Input()
 			} else {
 				nextPeer = nil
+				nextPeerInput = nil
 			}
 		case v := <-peerResponses:
+			numOutstandingResponses--
 			timer.Reset(n.electionTimeout)
 			switch msg := v.msg.(type) {
 			case *pb.VoteResponse:
@@ -350,12 +366,14 @@ func (n *Node) runElection() nodeState {
 				peers = peers[1:]
 				peers = append(peers, nextPeer)
 				nextPeer = peers[0]
+				nextPeerInput = nextPeer.Input()
 			}
 		}
 	}
 }
 
 func (n *Node) becomeLeader() nodeState {
+	n.logger.Infof("pebble became leader: %s", n.id)
 	nextIdx := make(map[string]int64)
 	sendHeartbeat := make(map[string]bool)
 	matchIdx := make(map[string]int64)
@@ -369,8 +387,9 @@ func (n *Node) becomeLeader() nodeState {
 	}
 
 	nextPeerIdx := 0
-	nextPeer := n.peers[nextPeerIdx]
 	for {
+		nextPeer := n.peers[nextPeerIdx]
+		nextPeerInput := nextPeer.Input()
 		var appendEntriesReq request
 		if sendHeartbeat[nextPeer.ID()] {
 			m := &pb.AppendEntriesRequest{
@@ -401,9 +420,19 @@ func (n *Node) becomeLeader() nodeState {
 		} else {
 			nextPeer = nil
 		}
+
+		if nextPeer == nil {
+			timer.Reset(n.heartbeatTimeout)
+		} else {
+			timer.Stop()
+		}
+
 		select {
-		case nextPeer.Input() <- appendEntriesReq:
+		case nextPeerInput <- appendEntriesReq:
 			nextPeerIdx++
+			if nextPeerIdx >= len(n.peers) {
+				nextPeerIdx = 0
+			}
 		case <-timer.C:
 			for k := range maps.Keys(sendHeartbeat) {
 				sendHeartbeat[k] = true
@@ -451,7 +480,6 @@ func (n *Node) becomeLeader() nodeState {
 				}
 			}
 		case req := <-n.request:
-			timer.Reset(n.electionTimeout)
 			switch r := req.msg.(type) {
 			case *pb.ProposeRequest:
 				e := &pb.Entry{
@@ -476,6 +504,7 @@ func (n *Node) becomeLeader() nodeState {
 						Term:    n.term,
 						Success: false,
 					},
+					req: &req,
 				}
 				req.response <- res
 			case *pb.VoteRequest:
@@ -490,6 +519,7 @@ func (n *Node) becomeLeader() nodeState {
 						Term:    n.term,
 						Granted: false,
 					},
+					req: &req,
 				}
 				req.response <- res
 			}
@@ -497,7 +527,17 @@ func (n *Node) becomeLeader() nodeState {
 			return stateExit
 		default:
 			nextPeerIdx++
+			if nextPeerIdx >= len(n.peers) {
+				nextPeerIdx = 0
+			}
 		}
+	}
+}
+
+func (n *Node) drain(c chan response, numberOfOutstandingResponses int) {
+	for numberOfOutstandingResponses != 0 {
+		<-c
+		numberOfOutstandingResponses--
 	}
 }
 

@@ -1,9 +1,11 @@
 package kvs
 
 import (
+	"math/rand"
 	"testing"
 	"time"
 
+	"github.com/buddhike/libvegas/lib/kvs/pb"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 )
@@ -33,8 +35,14 @@ func TestNode(t *testing.T) {
 }
 
 func newTestNode(id string, logger *zap.SugaredLogger) *Node {
-	log := &inMemoryLog{}
-	state := &inMemoryMap{}
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	electionTimeout := rnd.Intn(100) + 100
+	log := &inMemoryLog{
+		entries: make([]*pb.Entry, 0),
+	}
+	state := &inMemoryMap{
+		i: make(map[string]string),
+	}
 	stop := make(chan struct{})
-	return NewNode(id, time.Second, time.Second*5, log, state, stop, logger)
+	return NewNode(id, time.Millisecond*50, time.Millisecond*time.Duration(electionTimeout), log, state, stop, logger)
 }
