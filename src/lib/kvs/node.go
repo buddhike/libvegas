@@ -2,7 +2,6 @@ package kvs
 
 import (
 	"maps"
-	"math"
 	"slices"
 	"time"
 
@@ -472,18 +471,22 @@ func (n *Node) becomeLeader() nodeState {
 					nextIdx[res.PeerID] = nextIdx[res.PeerID] - 1
 				}
 			}
-			smallestMatchIndex := int64(math.MaxInt64)
+			smallestMatchIndex := int64(0)
+			matchedPeerCount := 0
 			for k := range maps.Keys(matchIdx) {
-				if matchIdx[k] < int64(smallestMatchIndex) {
+				if matchIdx[k] > 0 && (smallestMatchIndex == 0 || matchIdx[k] <= smallestMatchIndex) {
 					smallestMatchIndex = matchIdx[k]
+					matchedPeerCount++
 				}
 			}
-			if n.commitIndex < smallestMatchIndex {
-				e := n.log.Get(smallestMatchIndex)
+			quorumSize := len(n.peers) + 1
+			majority := (quorumSize / 2) + 1
+			if n.commitIndex < smallestMatchIndex && matchedPeerCount >= majority {
+				e := n.log.Get(smallestMatchIndex - 1)
 				if e.Term == n.term {
 					n.commitIndex = smallestMatchIndex
 					for i := n.commitIndex; n.lastApplied < n.commitIndex; n.lastApplied++ {
-						entry := n.log.Get(i)
+						entry := n.log.Get(i - 1)
 						n.state.Apply(entry)
 					}
 
