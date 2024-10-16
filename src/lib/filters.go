@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"sync"
 
-	"github.com/buddhike/libvegas/lib/pb"
+	"github.com/buddhike/pebble/lib/pb"
 )
 
 // invalidMappingFilter filters the records that are incorrectly written to a

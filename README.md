@@ -1,4 +1,4 @@
-libvegas
-> Client library for Kinesis Data Streams
+# Pebble
+> A stream processing library
 
-This is currently experimental, not for production.
+This project is work in progress.

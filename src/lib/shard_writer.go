@@ -6,7 +6,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
-	"github.com/buddhike/libvegas/lib/pb"
+	"github.com/buddhike/pebble/lib/pb"
 	"google.golang.org/protobuf/proto"
 )
 

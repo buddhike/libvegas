@@ -5,7 +5,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
-	"github.com/buddhike/libvegas/lib/pb"
+	"github.com/buddhike/pebble/lib/pb"
 )
 
 type RecordProcessor func(*pb.UserRecord) error

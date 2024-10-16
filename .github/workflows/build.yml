@@ -1,4 +1,4 @@
-name: Build libvegas
+name: Build Pebble
 
 on:
   # Runs on pushes targeting the default branch
@@ -98,14 +98,14 @@ jobs:
         if: github.event_name == 'release'
         env: 
           PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
-          LIBVEGAS_VERSION: ${{ github.ref }}
+          PEBBLE_VERSION: ${{ github.ref }}
         run: |
-          mkdir lang/python/src/libvegas/libs
-          mv *.so lang/python/src/libvegas/libs/
+          mkdir lang/python/src/pebble/libs
+          mv *.so lang/python/src/pebble/libs/
           pip install poetry
           cd lang/python
-          echo "${LIBVEGAS_VERSION/refs\/tags\/}"
-          sed "s/version = \"[0-9]*\.[0-9]*\.[0-9]*\"/version = \"${LIBVEGAS_VERSION/refs\/tags\/}\"/g" pyproject.toml > pyproject-next.toml
+          echo "${PEBBLE_VERSION/refs\/tags\/}"
+          sed "s/version = \"[0-9]*\.[0-9]*\.[0-9]*\"/version = \"${PEBBLE_VERSION/refs\/tags\/}\"/g" pyproject.toml > pyproject-next.toml
           mv pyproject-next.toml pyproject.toml 
           poetry config pypi-token.pypi $PYPI_TOKEN
           poetry publish --build

@@ -6,7 +6,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/buddhike/libvegas/lib/kvs/pb"
+	"github.com/buddhike/pebble/lib/kvs/pb"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )

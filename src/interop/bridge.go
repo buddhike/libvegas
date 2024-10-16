@@ -25,8 +25,8 @@ import (
 	"sync"
 	"unsafe"
 
-	vegas "github.com/buddhike/libvegas/lib"
-	"github.com/buddhike/libvegas/lib/pb"
+	vegas "github.com/buddhike/pebble/lib"
+	"github.com/buddhike/pebble/lib/pb"
 )
 
 var producers []*vegas.Producer

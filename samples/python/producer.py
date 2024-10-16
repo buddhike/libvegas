@@ -1,4 +1,4 @@
-from libvegas import Producer
+from pebble import Producer
 
 p = Producer("test")
 for i in range(10):

@@ -4,7 +4,7 @@ ifeq ("", "${machine}")
 machine = $(shell uname -m | tr [:upper:] [:lower:])
 endif
 
-fname = "${os}_${machine}_libvegas.so"
+fname = "${os}_${machine}_pebble.so"
 
 .PHONY: clean
 clean: 

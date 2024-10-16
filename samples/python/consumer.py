@@ -1,4 +1,4 @@
-from libvegas import Consumer 
+from pebble import Consumer 
 
 def process_record(r):
     print(str(r.partitionKey) + ":" + r.data.decode("utf-8"))

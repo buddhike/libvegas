@@ -49,7 +49,7 @@ arch = platform.machine().lower()
 if arch == "x86_64": 
     arch = "amd64"
 
-lib_name = f'{os}_{arch}_libvegas.so'
+lib_name = f'{os}_{arch}_pebble.so'
 lib_path = path.join(path.dirname(__file__), "libs", lib_name)
 lib = ffi.dlopen(lib_path)
 

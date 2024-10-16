@@ -1,5 +1,5 @@
 import time
-from libvegas import Producer, Consumer
+from pebble import Producer, Consumer
 
 def process_record(r):
     s = float(r.data.decode("utf-8"))

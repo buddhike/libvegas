@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buddhike/libvegas/lib/kvs/pb"
+	"github.com/buddhike/pebble/lib/kvs/pb"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 )
