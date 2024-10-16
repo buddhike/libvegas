@@ -89,9 +89,9 @@ func (n *Node) Start() {
 }
 
 func (n *Node) becomeFollower() nodeState {
+	n.logger.Infof("pebble become follower %s", n.id)
 	// If node is becoming a follower because of a new term observered
 	// from a peer, handle that request first.
-	n.logger.Infof("pebble become follower %s", n.id)
 	if n.pendingRequest != nil {
 		switch n.pendingRequest.msg.(type) {
 		case *pb.AppendEntriesRequest:
@@ -99,8 +99,8 @@ func (n *Node) becomeFollower() nodeState {
 		case *pb.VoteRequest:
 			n.vote(*n.pendingRequest)
 		}
+		n.pendingRequest = nil
 	}
-	n.pendingRequest = nil
 	timer := time.NewTimer(n.electionTimeout)
 	for {
 		select {
@@ -283,8 +283,7 @@ func (n *Node) runElection() nodeState {
 		msg:      &vr,
 		response: peerResponses,
 	}
-	nextPeer := peers[0]
-	nextPeerInput := nextPeer.Input()
+	nextPeerInput := peers[0].Input()
 	quorumSize := len(n.peers) + 1
 	timer := time.NewTimer(n.electionTimeout)
 	for {
@@ -294,10 +293,8 @@ func (n *Node) runElection() nodeState {
 			numOutstandingResponses++
 			peers = peers[1:]
 			if len(peers) > 0 {
-				nextPeer = peers[0]
-				nextPeerInput = nextPeer.Input()
+				nextPeerInput = peers[0].Input()
 			} else {
-				nextPeer = nil
 				nextPeerInput = nil
 			}
 		case v := <-peerResponses:
@@ -363,10 +360,10 @@ func (n *Node) runElection() nodeState {
 			return stateExit
 		default:
 			if len(peers) > 1 {
+				head := peers[0]
 				peers = peers[1:]
-				peers = append(peers, nextPeer)
-				nextPeer = peers[0]
-				nextPeerInput = nextPeer.Input()
+				peers = append(peers, head)
+				nextPeerInput = peers[0].Input()
 			}
 		}
 	}
