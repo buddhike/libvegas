@@ -559,9 +559,14 @@ func (n *Node) becomeLeader() nodeState {
 	}
 }
 
-// drain is used to all outstanding responses from a peer response channel.
-// This is an essential process because without that peers could block themselves
-// from progressing.
+// drain is used to read all outstanding responses from a peer response channel.
+// This is an essential because each state handler (i.e. becomeXxx) initialises
+// a new channel to demux responses from peers for the requests issued while
+// in that state. This approach gives the ability to reason about each state
+// handler without considering any responses to requests issued prior to a
+// state transition.
+// drain is used to read any pending requests out of those response channels
+// and ensure that peers can progress.
 func (n *Node) drain(c chan Res, numberOfOutstandingResponses int) {
 	for range c {
 		numberOfOutstandingResponses--
