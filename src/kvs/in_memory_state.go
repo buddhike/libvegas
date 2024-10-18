@@ -1,6 +1,6 @@
 package kvs
 
-import "github.com/buddhike/pebble/lib/kvs/pb"
+import "github.com/buddhike/pebble/kvs/pb"
 
 type inMemoryMap struct {
 	i map[string]string

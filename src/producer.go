@@ -1,4 +1,4 @@
-package lib
+package pebble
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
-	"github.com/buddhike/pebble/lib/pb"
+	"github.com/buddhike/pebble/pb"
 )
 
 type Producer struct {

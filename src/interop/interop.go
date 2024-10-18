@@ -25,23 +25,24 @@ import (
 	"sync"
 	"unsafe"
 
-	vegas "github.com/buddhike/pebble/lib"
-	"github.com/buddhike/pebble/lib/pb"
+	"github.com/buddhike/pebble"
+
+	"github.com/buddhike/pebble/pb"
 )
 
-var producers []*vegas.Producer
-var consumers []*vegas.Consumer
+var producers []*pebble.Producer
+var consumers []*pebble.Consumer
 var mut *sync.Mutex
 
 func init() {
-	producers = make([]*vegas.Producer, 0)
-	consumers = make([]*vegas.Consumer, 0)
+	producers = make([]*pebble.Producer, 0)
+	consumers = make([]*pebble.Consumer, 0)
 	mut = &sync.Mutex{}
 }
 
 //export NewProducerConfig
 func NewProducerConfig() C.ProducerConfig {
-	c := vegas.DefaultProducerConfig
+	c := pebble.DefaultProducerConfig
 	return C.ProducerConfig{
 		bufferSize:     C.int(c.BufferSize),
 		batchSize:      C.int(c.BatchSize),
@@ -53,7 +54,7 @@ func NewProducerConfig() C.ProducerConfig {
 func NewProducer(streamName *C.char, cfg C.ProducerConfig, id *C.int) *C.char {
 	mut.Lock()
 	defer mut.Unlock()
-	p, err := vegas.NewProducer(C.GoString(streamName), vegas.ProducerConfig{
+	p, err := pebble.NewProducer(C.GoString(streamName), pebble.ProducerConfig{
 		BufferSize:     int(cfg.bufferSize),
 		BatchSize:      int(cfg.batchSize),
 		BatchTimeoutMS: int(cfg.batchTimeoutMS),
@@ -83,7 +84,7 @@ func NewConsumer(streamName, efoARN *C.char, callback *C.Callback, handle unsafe
 	mut.Lock()
 	defer mut.Unlock()
 
-	c, err := vegas.NewConsumer(C.GoString(streamName), C.GoString(efoARN), func(ur *pb.UserRecord) error {
+	c, err := pebble.NewConsumer(C.GoString(streamName), C.GoString(efoARN), func(ur *pb.UserRecord) error {
 		cur := C.UserRecord{
 			partitionKey: C.CString(ur.PartitionKey),
 			data:         (*C.char)(unsafe.Pointer(&ur.Data[0])),

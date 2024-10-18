@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"sync"
 
-	vegas "github.com/buddhike/pebble/lib"
-	"github.com/buddhike/pebble/lib/pb"
+	"github.com/buddhike/pebble"
+	"github.com/buddhike/pebble/pb"
 )
 
 func main() {
 	streamName := "test"
-	p, err := vegas.NewProducer(streamName, vegas.DefaultProducerConfig)
+	p, err := pebble.NewProducer(streamName, pebble.DefaultProducerConfig)
 	if err != nil {
 		panic(err)
 	}

@@ -1,11 +1,11 @@
-package lib
+package pebble
 
 import (
 	"crypto/md5"
 	"encoding/hex"
 	"sync"
 
-	"github.com/buddhike/pebble/lib/pb"
+	"github.com/buddhike/pebble/pb"
 )
 
 // invalidMappingFilter filters the records that are incorrectly written to a
