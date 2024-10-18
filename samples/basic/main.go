@@ -20,7 +20,7 @@ func main() {
 
 	go func() {
 		efo := "arn:aws:kinesis:ap-southeast-2:767660010185:stream/test/consumer/python-consumer:1686199962"
-		c, err := vegas.NewConsumer(streamName, efo, func(ur *pb.UserRecord) error {
+		c, err := pebble.NewConsumer(streamName, efo, func(ur *pb.UserRecord) error {
 			fmt.Println("PK: ", ur.PartitionKey, " Value: ", string(ur.Data))
 			return nil
 		})
