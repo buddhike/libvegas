@@ -382,10 +382,23 @@ func (n *Node) becomeLeader() nodeState {
 	idleTimer.Stop()
 	peerResponses := make(chan Res)
 	numOutstandingResponses := 0
+	pendingProposals := make(map[int64]Req)
+
 	defer func() {
 		n.drain(peerResponses, numOutstandingResponses)
+		for k := range maps.Keys(pendingProposals) {
+			req := pendingProposals[k]
+			req.Response <- Res{
+				PeerID: n.id,
+				Msg: &pb.PropseResponse{
+					Accepted:      false,
+					CurrentLeader: "",
+				},
+				Req: &req,
+			}
+		}
 	}()
-	pendingProposals := make(map[int64]Req)
+
 	for _, p := range n.peers {
 		nextIdx[p.ID()] = n.log.Len() + 1
 		sendHeartbeat[p.ID()] = true
@@ -518,7 +531,6 @@ func (n *Node) becomeLeader() nodeState {
 				pendingProposals[e.Index] = req
 			case *pb.AppendEntriesRequest:
 				if r.Term > n.term {
-					// TODO: Cancel pending proposals
 					n.updateNodeState(r.Term, "")
 					n.pendingRequest = &req
 					return stateFollower
