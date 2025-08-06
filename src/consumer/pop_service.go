@@ -16,9 +16,9 @@ type PopService struct {
 	kvs                  KVS
 	kds                  aws.Kinesis
 	discovery            *ShardDiscoveryService
-	stop                 chan struct{}
+	ready                chan struct{}
 	done                 chan struct{}
-	componentsDoneNotify map[string]chan struct{}
+	componentsDoneNotify map[string]runnable
 	logger               *zap.Logger
 }
 
@@ -55,14 +55,15 @@ func NewPopService(name, streamName string, opts ...func(*PopConfig)) *PopServic
 
 	return &PopService{
 		cfg:                  &cfg,
-		componentsDoneNotify: make(map[string]chan struct{}),
-		stop:                 make(chan struct{}),
+		componentsDoneNotify: make(map[string]runnable),
+		ready:                make(chan struct{}),
 		done:                 make(chan struct{}),
 		logger:               logger.Named("pop").With(zap.String("name", cfg.GetEtcdPeerName())),
 	}
 }
 
-func (p *PopService) Start() error {
+func (p *PopService) Start(ctx context.Context) error {
+	defer close(p.ready)
 	cli, err := clientv3.New(clientv3.Config{
 		Endpoints:   p.cfg.GetClientConnectionUrls(),
 		DialTimeout: 5 * time.Second,
@@ -84,40 +85,35 @@ func (p *PopService) Start() error {
 		p.kds = p.cfg.KinesisClient
 	}
 
-	p.discovery = NewShardDiscoveryService(p.cfg, p.kds, p.stop, p.logger)
-	p.discovery.Start()
-	p.componentsDoneNotify["ShardDiscoveryService"] = p.discovery.done
+	p.discovery = NewShardDiscoveryService(p.cfg, p.kds, p.logger)
+	p.discovery.Start(ctx)
+	p.componentsDoneNotify["ShardDiscoveryService"] = p.discovery
 
-	mgr := NewManagerService(p.cfg, p.kds, p.kvs, p.discovery, p.stop, p.logger)
-	err = mgr.Start()
+	mgr := NewManagerService(p.cfg, p.kds, p.kvs, p.discovery, p.logger)
+	err = mgr.Start(ctx)
 	if err != nil {
 		return err
 	}
-	p.componentsDoneNotify["ManagerService"] = mgr.done
+	p.componentsDoneNotify["ManagerService"] = mgr
 
-	etcdServer := NewEtcdServer(p.cfg, p.stop, p.logger)
-	err = etcdServer.Start()
+	etcdServer := NewEtcdServer(p.cfg, p.logger)
+	err = etcdServer.Start(ctx)
 	if err != nil {
 		return err
 	}
-	p.componentsDoneNotify["EtcdServer"] = etcdServer.done
+	p.componentsDoneNotify["EtcdServer"] = etcdServer
 
-	leader := NewLeader(p.cfg, mgr, cli, p.stop, p.logger)
-	p.componentsDoneNotify["Leader"] = leader.done
-	leader.Start()
+	leader := NewLeader(p.cfg, mgr, cli, p.logger)
+	p.componentsDoneNotify["Leader"] = leader
+	leader.Start(ctx)
 	return nil
 }
 
-func (p *PopService) Stop() {
-	close(p.stop)
+func (p *PopService) WaitForShutdownCompletion() {
+	<-p.ready
 	for k, v := range p.componentsDoneNotify {
-		p.logger.Info("shutdown initiated", zap.String("component", k))
-		<-v
-		p.logger.Info("shutdown complete", zap.String("component", k))
+		p.logger.Info("wait for shutdown completion", zap.String("component", k))
+		v.WaitForShutdownCompletion()
+		p.logger.Info("shutdown completed", zap.String("component", k))
 	}
-	close(p.done)
-}
-
-func (p *PopService) Done() <-chan struct{} {
-	return p.done
 }

@@ -237,7 +237,7 @@ type testWorld struct {
 	epoc                int
 	clock               time.Time
 	popCfg              *PopConfig
-	stop                chan struct{}
+	cancel              context.CancelFunc
 	logger              *zap.Logger
 	kds                 *mockKinesis
 	kvs                 *mockKVS
@@ -256,8 +256,8 @@ func (w *testWorld) ExpireInactiveWorkers() {
 }
 
 func (w *testWorld) CleanUp() {
-	close(w.stop)
-	<-w.shardDiscoverySvc.done
+	w.cancel()
+	w.shardDiscoverySvc.WaitForShutdownCompletion()
 }
 
 func (w *testWorld) AdvanceTimeBySeconds(s int) {
@@ -286,18 +286,18 @@ func newTestSubject(shardIds ...string) (*ManagerService, *testWorld) {
 		WorkerInactivityTimeoutMilliseconds: 5000,
 		ShardReleaseTimeoutMilliseconds:     2000,
 	}
-	stop := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
 	logger := zap.NewNop()
 	kds := newMockKinesis(shardIds...)
 	kvs := newMockKVS()
 	shardDiscoveryTimerC := make(chan time.Time)
-	sd := NewShardDiscoveryService(popCfg, kds, stop, logger)
+	sd := NewShardDiscoveryService(popCfg, kds, logger)
 	sd.timer = func(d time.Duration) <-chan time.Time { return shardDiscoveryTimerC }
-	sd.Start()
+	sd.Start(ctx)
 
 	w := &testWorld{
 		popCfg:              popCfg,
-		stop:                stop,
+		cancel:              cancel,
 		logger:              logger,
 		kds:                 kds,
 		kvs:                 kvs,
@@ -305,7 +305,7 @@ func newTestSubject(shardIds ...string) (*ManagerService, *testWorld) {
 		shardDiscoveryTimer: shardDiscoveryTimerC,
 	}
 
-	svc := NewManagerService(popCfg, kds, kvs, sd, stop, logger)
+	svc := NewManagerService(popCfg, kds, kvs, sd, logger)
 	svc.clock = func() time.Time {
 		return w.clock
 	}

@@ -12,29 +12,29 @@ type Leader struct {
 	cfg        *PopConfig
 	etcdClient *clientv3.Client
 	done       chan struct{}
-	stop       chan struct{}
 	mgr        *ManagerService
 	logger     *zap.Logger
 }
 
-func NewLeader(cfg *PopConfig, mgr *ManagerService, etcdClient *clientv3.Client, stop chan struct{}, logger *zap.Logger) *Leader {
+func NewLeader(cfg *PopConfig, mgr *ManagerService, etcdClient *clientv3.Client, logger *zap.Logger) *Leader {
 	return &Leader{
 		cfg:        cfg,
 		etcdClient: etcdClient,
 		done:       make(chan struct{}),
-		stop:       stop,
 		mgr:        mgr,
 		logger:     logger.Named("leader"),
 	}
 }
 
-func (l *Leader) Start() {
+func (l *Leader) Start(ctx context.Context) error {
 	go func() {
-		ctx, cancel := context.WithCancel(context.Background())
+		// TODO: Review if this ctx is necessary
+		ctx, cancel := context.WithCancel(ctx)
 		go l.elect(ctx)
-		<-l.stop
+		<-ctx.Done()
 		cancel()
 	}()
+	return nil
 }
 
 func (l *Leader) elect(ctx context.Context) {
@@ -99,4 +99,8 @@ func (l *Leader) elect(ctx context.Context) {
 			return
 		}
 	}
+}
+
+func (l *Leader) WaitForShutdownCompletion() {
+	<-l.done
 }

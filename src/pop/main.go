@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -37,14 +38,15 @@ func init() {
 func main() {
 	parseArgs()
 	pop := consumer.NewPopService(name, streamName, consumer.WithID(id), consumer.WithManagerPopUrls(popUrls), consumer.WithPopListenAddress(popListenAddress), consumer.WithEtcdPeerUrls(etcdPeerUrls), consumer.WithEtcdListenPeerAddress(etcdPeerListenAddress), consumer.WithEtcdClientUrls(etcdClientUrls), consumer.WithEtcdListenClientAddress(etcdClientListenAddress))
+	ctx, cancel := context.WithCancel(context.Background())
 	stopchan := make(chan os.Signal, 1)
 	signal.Notify(stopchan, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		<-stopchan
-		pop.Stop()
+		cancel()
 	}()
-	go pop.Start()
-	<-pop.Done()
+	go pop.Start(ctx)
+	pop.WaitForShutdownCompletion()
 }
 
 func parseArgs() {

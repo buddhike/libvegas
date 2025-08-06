@@ -27,7 +27,6 @@ type ManagerService struct {
 	cfg       *PopConfig
 	closed    []*closeNotification
 	done      chan struct{}
-	stop      chan struct{}
 	logger    *zap.Logger
 	clock     func() time.Time
 	// All fields below this point the mutable state
@@ -110,7 +109,7 @@ type closeNotification struct {
 	Worker  *workerInfo
 }
 
-func NewManagerService(cfg *PopConfig, kds aws.Kinesis, kvs KVS, shardDiscovery shardDiscovery, stop chan struct{}, logger *zap.Logger) *ManagerService {
+func NewManagerService(cfg *PopConfig, kds aws.Kinesis, kvs KVS, shardDiscovery shardDiscovery, logger *zap.Logger) *ManagerService {
 	return &ManagerService{
 		cfg:              cfg,
 		mut:              &sync.Mutex{},
@@ -118,7 +117,6 @@ func NewManagerService(cfg *PopConfig, kds aws.Kinesis, kvs KVS, shardDiscovery 
 		kvs:              kvs,
 		discovery:        shardDiscovery,
 		done:             make(chan struct{}),
-		stop:             stop,
 		workers:          make(map[string]*workerInfo),
 		liveShards:       make(map[string]*types.Shard),
 		workerHeartbeats: primitives.NewPriorityQueue[string](false),
@@ -128,7 +126,7 @@ func NewManagerService(cfg *PopConfig, kds aws.Kinesis, kvs KVS, shardDiscovery 
 	}
 }
 
-func (m *ManagerService) Start() error {
+func (m *ManagerService) Start(ctx context.Context) error {
 	url, err := m.cfg.GetManagerListenUrl()
 	if err != nil {
 		return err
@@ -149,7 +147,7 @@ func (m *ManagerService) Start() error {
 	}()
 
 	go func() {
-		<-m.stop
+		<-ctx.Done()
 		server.Close()
 	}()
 
@@ -652,4 +650,8 @@ func (m *ManagerService) handleStateRequest() *StateResponse {
 	return &StateResponse{
 		Workers: workers,
 	}
+}
+
+func (m *ManagerService) WaitForShutdownCompletion() {
+	<-m.done
 }

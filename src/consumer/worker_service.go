@@ -2,6 +2,7 @@ package consumer
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,7 +20,6 @@ type WorkerService struct {
 	cfg               *ConsumerConfig
 	kds               aws.Kinesis
 	done              chan struct{}
-	stop              chan struct{}
 	managerUrls       []string
 	managerIndex      int
 	logger            *zap.Logger
@@ -30,13 +30,12 @@ type WorkerService struct {
 	clock             func() time.Time
 }
 
-func NewWorker(cfg *ConsumerConfig, kds aws.Kinesis, stop chan struct{}, logger *zap.Logger) *WorkerService {
+func NewWorker(cfg *ConsumerConfig, kds aws.Kinesis, logger *zap.Logger) *WorkerService {
 	id := fmt.Sprintf("%s-%s", cfg.Name, uuid.NewString())
 	return &WorkerService{
 		cfg:             cfg,
 		kds:             kds,
 		done:            make(chan struct{}),
-		stop:            stop,
 		managerUrls:     strings.Split(cfg.PopUrls, ","),
 		logger:          logger.Named(fmt.Sprintf("Worker-%s", id)),
 		maxShards:       1,
@@ -58,11 +57,10 @@ func (w *WorkerService) rotateManager() {
 	w.maxShards = 1
 }
 
-func (w *WorkerService) Start() {
+func (w *WorkerService) Start(ctx context.Context) error {
 	go func() {
 		defer close(w.done)
-
-		err := w.assignOnce()
+		err := w.assignOnce(ctx)
 		if err != nil {
 			w.logger.Error("error invoking assign", zap.Error(err), zap.String("current-manager", w.currentManager()))
 			w.rotateManager()
@@ -70,7 +68,7 @@ func (w *WorkerService) Start() {
 
 		for {
 			select {
-			case <-w.stop:
+			case <-ctx.Done():
 				w.logger.Info("worker is stopped")
 				for _, p := range w.shardProcessors {
 					p.Stop()
@@ -80,7 +78,7 @@ func (w *WorkerService) Start() {
 				}
 				return
 			case <-time.After(w.cfg.HealthcheckTimeout()):
-				err := w.assignOnce()
+				err := w.assignOnce(ctx)
 				if err != nil {
 					w.logger.Error("error invoking assign", zap.Error(err), zap.String("current-manager", w.currentManager()))
 					w.rotateManager()
@@ -88,9 +86,10 @@ func (w *WorkerService) Start() {
 			}
 		}
 	}()
+	return nil
 }
 
-func (w *WorkerService) assignOnce() error {
+func (w *WorkerService) assignOnce(ctx context.Context) error {
 	// Create assign request
 	assignReq := AssignRequest{
 		WorkerID:  w.cfg.ID,
@@ -100,11 +99,20 @@ func (w *WorkerService) assignOnce() error {
 	// Marshal request to JSON
 	reqBody, err := json.Marshal(assignReq)
 	if err != nil {
-		panic(err)
+		w.logger.Fatal("error marshaling assign request", zap.Error(err))
 	}
 
 	// Make HTTP request to manager
-	resp, err := http.Post(fmt.Sprintf("%s/assign/", w.currentManager()), "application/json", bytes.NewBuffer(reqBody))
+	ctx, cancel := context.WithTimeout(ctx, w.cfg.ApplyRequestTimeout())
+	defer cancel()
+
+	request, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/assign/", w.currentManager()), bytes.NewBuffer(reqBody))
+	if err != nil {
+		w.logger.Fatal("error when creating assign request", zap.Error(err))
+	}
+	request.Header.Add("Content-Type", "application/json")
+	request.Header.Add("Accept", "application/json")
+	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return fmt.Errorf("failed send assign request: %w", err)
 	}
@@ -204,4 +212,8 @@ func (w *WorkerService) assignOnce() error {
 		}
 	}
 	return nil
+}
+
+func (w *WorkerService) WaitForShutdownCompletion() {
+	<-w.done
 }

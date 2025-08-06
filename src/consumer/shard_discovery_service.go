@@ -23,13 +23,12 @@ type ShardDiscoveryService struct {
 	shards      map[string]*shard
 	kds         aws.Kinesis
 	done        chan struct{}
-	stop        chan struct{}
 	initialised chan struct{}
 	logger      *zap.Logger
 	timer       func(time.Duration) <-chan time.Time
 }
 
-func NewShardDiscoveryService(cfg *PopConfig, kds aws.Kinesis, stop chan struct{}, logger *zap.Logger) *ShardDiscoveryService {
+func NewShardDiscoveryService(cfg *PopConfig, kds aws.Kinesis, logger *zap.Logger) *ShardDiscoveryService {
 	return &ShardDiscoveryService{
 		cfg:         cfg,
 		mut:         &sync.Mutex{},
@@ -37,13 +36,12 @@ func NewShardDiscoveryService(cfg *PopConfig, kds aws.Kinesis, stop chan struct{
 		kds:         kds,
 		done:        make(chan struct{}),
 		initialised: make(chan struct{}),
-		stop:        stop,
 		logger:      logger.Named("shard-discovery-service"),
 		timer:       time.After,
 	}
 }
 
-func (svc *ShardDiscoveryService) Start() {
+func (svc *ShardDiscoveryService) Start(ctx context.Context) error {
 	go func() {
 		defer close(svc.done)
 		initialized := false
@@ -56,7 +54,7 @@ func (svc *ShardDiscoveryService) Start() {
 
 		for {
 			select {
-			case <-svc.stop:
+			case <-ctx.Done():
 				return
 			default:
 				err := svc.discoverOnce()
@@ -70,12 +68,13 @@ func (svc *ShardDiscoveryService) Start() {
 			}
 
 			select {
-			case <-svc.stop:
+			case <-ctx.Done():
 				return
 			case <-svc.timer(svc.cfg.ShardDiscoveryInterval()):
 			}
 		}
 	}()
+	return nil
 }
 
 func (svc *ShardDiscoveryService) discoverOnce() error {
@@ -178,4 +177,8 @@ func (svc *ShardDiscoveryService) GetChildren(shardID string) []*types.Shard {
 		r = append(r, shard.Shard)
 	}
 	return r
+}
+
+func (svc *ShardDiscoveryService) WaitForShutdownCompletion() {
+	<-svc.done
 }

@@ -94,6 +94,8 @@ func (p *ShardProcessor) Start() {
 				p.logger.Info("failed to subscribe to shard", zap.String("sequence-number", sequenceNumber), zap.Error(err))
 				continue
 			}
+
+			p.logger.Info("subscription started", zap.String("sequence-number", sequenceNumber))
 			// Process events from the subscription with stop signal handling
 			okToSubscribe, sequenceNumber = p.handleSubscription(output)
 		}

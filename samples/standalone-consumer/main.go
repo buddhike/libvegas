@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -29,9 +30,10 @@ func main() {
 	}
 
 	c := consumer.MustNewStandaloneConsumer("my-consumer", streamName, streamConsumerArn, processFn)
+	ctx, cancel := context.WithCancel(context.Background())
 
 	// Start the consumer
-	err := c.Start()
+	err := c.Start(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -40,9 +42,9 @@ func main() {
 	signal.Notify(notifyChan, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		<-notifyChan
-		c.Stop()
+		cancel()
 	}()
 
 	// Wait for the consumer to finish
-	<-c.Done()
+	c.WaitForShutdownCompletion()
 }

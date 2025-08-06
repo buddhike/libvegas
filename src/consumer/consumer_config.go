@@ -9,19 +9,21 @@ import (
 )
 
 type ConsumerConfig struct {
-	ID                                  string
-	StreamName                          string
-	EfoConsumerArn                      string
-	ProcessFn                           func(types.Record)
-	Name                                string
-	KinesisClient                       *kinesis.Client
-	PopUrls                             string
-	HealthcheckTimeoutMilliseconds      int
-	WorkerInactivityTimeoutMilliseconds int
-	CheckpointIntervalMilliseconds      int
-	CheckpointRetryIntervalMilliseconds int
-	StandaloneConsumer                  bool
-	logger                              *zap.Logger
+	ID                                   string
+	StreamName                           string
+	EfoConsumerArn                       string
+	ProcessFn                            func(types.Record)
+	Name                                 string
+	KinesisClient                        *kinesis.Client
+	PopUrls                              string
+	HealthcheckTimeoutMilliseconds       int
+	WorkerInactivityTimeoutMilliseconds  int
+	CheckpointIntervalMilliseconds       int
+	CheckpointRetryIntervalMilliseconds  int
+	ApplyRequestTimeoutMilliseconds      int
+	CheckpointRequestTimeoutMilliseconds int
+	StandaloneConsumer                   bool
+	logger                               *zap.Logger
 }
 
 func (cfg *ConsumerConfig) HealthcheckTimeout() time.Duration {
@@ -38,6 +40,14 @@ func (cfg *ConsumerConfig) CheckpointInterval() time.Duration {
 
 func (cfg *ConsumerConfig) CheckpointRetryInterval() time.Duration {
 	return time.Duration(cfg.CheckpointRetryIntervalMilliseconds) * time.Millisecond
+}
+
+func (cfg *ConsumerConfig) ApplyRequestTimeout() time.Duration {
+	return time.Duration(cfg.ApplyRequestTimeoutMilliseconds) * time.Millisecond
+}
+
+func (cfg *ConsumerConfig) CheckpointRequestTimeout() time.Duration {
+	return time.Duration(cfg.CheckpointRequestTimeoutMilliseconds) * time.Millisecond
 }
 
 func WithKinesisClient(kds *kinesis.Client) func(*ConsumerConfig) {
@@ -67,5 +77,17 @@ func WithCheckpointInterval(t int) func(*ConsumerConfig) {
 func AsStandalone() func(*ConsumerConfig) {
 	return func(cfg *ConsumerConfig) {
 		cfg.StandaloneConsumer = true
+	}
+}
+
+func WithApplyRequestTimeout(t int) func(*ConsumerConfig) {
+	return func(cfg *ConsumerConfig) {
+		cfg.ApplyRequestTimeoutMilliseconds = t
+	}
+}
+
+func WithCheckpointRequestTimeout(t int) func(*ConsumerConfig) {
+	return func(cfg *ConsumerConfig) {
+		cfg.CheckpointRequestTimeoutMilliseconds = t
 	}
 }

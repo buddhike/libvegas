@@ -1,6 +1,7 @@
 package consumer
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -11,22 +12,20 @@ import (
 type EtcdServer struct {
 	cfg              *PopConfig
 	done             chan struct{}
-	stop             chan struct{}
 	startStopTimeout time.Duration
 	logger           *zap.Logger
 }
 
-func NewEtcdServer(cfg *PopConfig, stop chan struct{}, logger *zap.Logger) *EtcdServer {
+func NewEtcdServer(cfg *PopConfig, logger *zap.Logger) *EtcdServer {
 	return &EtcdServer{
 		cfg:              cfg,
 		done:             make(chan struct{}),
-		stop:             stop,
 		startStopTimeout: time.Second * time.Duration(cfg.EtcdStartTimeoutSeconds),
 		logger:           logger.Named("etcdserver"),
 	}
 }
 
-func (s *EtcdServer) Start() error {
+func (s *EtcdServer) Start(ctx context.Context) error {
 	listenClientUrls, err := s.cfg.GetListenClientUrls()
 	if err != nil {
 		return err
@@ -71,9 +70,12 @@ func (s *EtcdServer) Start() error {
 			s.logger.Info("embedded etcd server is ready")
 		case <-time.After(s.startStopTimeout):
 			s.logger.Error("embedded etcd server took too long to start")
+		case <-ctx.Done():
+			s.logger.Info("cancelled before started")
+			return
 		}
 
-		<-s.stop
+		<-ctx.Done()
 		s.logger.Info("shutting down etcd server")
 		e.Close()
 		s.logger.Info("etcdserver closed")
@@ -87,4 +89,8 @@ func (s *EtcdServer) Start() error {
 	}()
 
 	return nil
+}
+
+func (s *EtcdServer) WaitForShutdownCompletion() {
+	<-s.done
 }
