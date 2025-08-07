@@ -165,9 +165,10 @@ func TestAssignForShardSplit(t *testing.T) {
 	assert.Len(t, r.Assignments, 1)
 	assert.Equal(t, "s0", r.Assignments[0].ShardID)
 
+	ctx := context.Background()
 	// a closes the shard
 	aid := r.Assignments[0].ID
-	_, err := svc.handleCheckpointRequest(&CheckpointRequest{AssignmentID: aid, WorkerID: "a", ShardID: "s0", SequenceNumber: "CLOSED"})
+	_, err := svc.handleCheckpointRequest(ctx, &CheckpointRequest{AssignmentID: aid, WorkerID: "a", ShardID: "s0", SequenceNumber: "CLOSED"})
 	assert.NoError(t, err)
 
 	// a should get s1 and s2 assigned after s0 is closed
@@ -186,9 +187,10 @@ func TestAssignForShardMerge(t *testing.T) {
 	assert.Equal(t, "s0", r.Assignments[0].ShardID)
 	assert.Equal(t, "s1", r.Assignments[1].ShardID)
 
+	ctx := context.Background()
 	// a closes s0
 	aid := r.Assignments[0].ID
-	_, err := svc.handleCheckpointRequest(&CheckpointRequest{AssignmentID: aid, WorkerID: "a", ShardID: "s0", SequenceNumber: "CLOSED"})
+	_, err := svc.handleCheckpointRequest(ctx, &CheckpointRequest{AssignmentID: aid, WorkerID: "a", ShardID: "s0", SequenceNumber: "CLOSED"})
 	assert.NoError(t, err)
 
 	// a should get only s1 because s2 is only available when both parents are closed
@@ -198,7 +200,7 @@ func TestAssignForShardMerge(t *testing.T) {
 
 	// a closes s1
 	aid = r.Assignments[0].ID
-	_, err = svc.handleCheckpointRequest(&CheckpointRequest{AssignmentID: aid, WorkerID: "a", ShardID: "s1", SequenceNumber: "CLOSED"})
+	_, err = svc.handleCheckpointRequest(ctx, &CheckpointRequest{AssignmentID: aid, WorkerID: "a", ShardID: "s1", SequenceNumber: "CLOSED"})
 	assert.NoError(t, err)
 
 	// a should get s2
@@ -215,9 +217,10 @@ func TestAssignWhenShardIsClosedButChildShardsAreNotYetDiscovered(t *testing.T) 
 	assert.Len(t, r.Assignments, 1)
 	assert.Equal(t, "s0", r.Assignments[0].ShardID)
 
+	ctx := context.Background()
 	// a closes s0
 	aid := r.Assignments[0].ID
-	_, err := svc.handleCheckpointRequest(&CheckpointRequest{AssignmentID: aid, WorkerID: "a", ShardID: "s0", SequenceNumber: "CLOSED"})
+	_, err := svc.handleCheckpointRequest(ctx, &CheckpointRequest{AssignmentID: aid, WorkerID: "a", ShardID: "s0", SequenceNumber: "CLOSED"})
 	assert.NoError(t, err)
 
 	// a should not get any shards because shard discovery has not seen the split yet
@@ -309,7 +312,7 @@ func newTestSubject(shardIds ...string) (*ManagerService, *testWorld) {
 	svc.clock = func() time.Time {
 		return w.clock
 	}
-	svc.SetToInService(1)
+	svc.SetToInService(ctx, 1)
 
 	return svc, w
 }

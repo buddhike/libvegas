@@ -3,6 +3,7 @@ package consumer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -137,11 +138,11 @@ func (m *ManagerService) Start(ctx context.Context) error {
 	}
 
 	go func() {
-		http.HandleFunc("/checkpoint/", middleware.StateCriticalRoute(m.Checkpoint, m.logger))
-		http.HandleFunc("/assign/", middleware.StateCriticalRoute(m.Assign, m.logger))
-		http.HandleFunc("/status/", m.Status)
-		http.HandleFunc("/health/", m.Health)
-		http.HandleFunc("/state/", m.State)
+		http.HandleFunc("/checkpoint/", middleware.WithContext(ctx, middleware.StateCriticalRoute(m.Checkpoint, m.logger)))
+		http.HandleFunc("/assign/", middleware.WithContext(ctx, middleware.StateCriticalRoute(m.Assign, m.logger)))
+		http.HandleFunc("/status/", middleware.WithContext(ctx, m.Status))
+		http.HandleFunc("/health/", middleware.WithContext(ctx, m.Health))
+		http.HandleFunc("/state/", middleware.WithContext(ctx, m.State))
 		server.ListenAndServe()
 		close(m.done)
 	}()
@@ -414,7 +415,7 @@ func (m *ManagerService) Checkpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response, err := m.handleCheckpointRequest(&request)
+	response, err := m.handleCheckpointRequest(r.Context(), &request)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("checkpoint failed"))
@@ -431,13 +432,11 @@ func (m *ManagerService) Checkpoint(w http.ResponseWriter, r *http.Request) {
 	w.Write(res)
 }
 
-func (m *ManagerService) handleCheckpointRequest(request *CheckpointRequest) (*CheckpointResponse, error) {
+func (m *ManagerService) handleCheckpointRequest(ctx context.Context, request *CheckpointRequest) (*CheckpointResponse, error) {
 	res := m.ensureCheckpointOwnership(request)
 	if res != nil {
 		return res, nil
 	}
-
-	ctx := context.Background()
 
 	assignmentKey := fmt.Sprintf("assignments/%s-assignment-id", request.ShardID)
 	assignmentID := fmt.Sprintf("%020d", request.AssignmentID)
@@ -528,7 +527,7 @@ func (m *ManagerService) ensureInService() Status {
 	return s
 }
 
-func (m *ManagerService) SetToInService(term int64) {
+func (m *ManagerService) SetToInService(ctx context.Context, term int64) {
 	var unassignedShards []*types.Shard
 	checkpoints := make(map[string]string)
 	var closed []*closeNotification
@@ -536,7 +535,10 @@ func (m *ManagerService) SetToInService(term int64) {
 	for _, shard := range allShards {
 		// ETCD client v3 has built-in retry logic
 		checkpointKey := fmt.Sprintf("checkpoints/%s", *shard.ShardId)
-		cp, err := m.kvs.Get(context.Background(), checkpointKey)
+		cp, err := m.kvs.Get(ctx, checkpointKey)
+		if errors.Is(err, context.Canceled) {
+			return
+		}
 		if err != nil {
 			m.logger.Error("failed to get checkpoint from kvs", zap.Error(err))
 			// TODO: Review this

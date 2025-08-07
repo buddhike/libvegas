@@ -63,7 +63,7 @@ func (l *Leader) elect(ctx context.Context) {
 
 		// Perform leader work
 		l.logger.Info("node is performing leader work", zap.String("node_id", nodeID))
-		l.mgr.SetToInService(election.Rev())
+		l.mgr.SetToInService(ctx, election.Rev())
 
 		// Observe leadership changes (optional - for monitoring)
 		observeCh := election.Observe(ctx)
